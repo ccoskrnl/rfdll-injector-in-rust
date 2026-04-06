@@ -25,6 +25,10 @@ struct Args {
     /// URL to download the DLL from (e.g., http://example.com/ReflectiveDLL.dll)
     #[arg(short, long)]
     url: Option<String>,
+
+    /// ReflectiveLoader function name in ReflectiveDLL.dll
+    #[arg(long, default_value = "yolo")]
+    rflname: String
 }
 
 
@@ -52,7 +56,7 @@ fn main() {
     // let dll = pe_parser::new(data);
     let dll = parse_pe::PeParser::new(data);
 
-    let func_raw = dll.get_func_raw("yolo").expect("Failed to find ReflectiveLoader function");
+    let func_raw = dll.get_func_raw(&args.rflname).expect("Failed to find ReflectiveLoader function");
     println!("ReflectiveLoader raw offset: 0x{:X}", func_raw);
 
 
