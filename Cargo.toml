@@ -11,11 +11,16 @@ anyhow = "1.0"
 ntapi = "0.4.3"
 windows = { version = "0.62.2", features = [
     "Win32_Foundation",
-    "Win32_System_Threading", 
     "Win32_System_Memory",
-    "Win32_System_Diagnostics_ToolHelp"
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_Diagnostics_Debug",
+    "Win32_System_Kernel",
+    "Win32_System_LibraryLoader",
 ] }
 
 pelite = "0.10.0"
 winapi = "0.3.9"
 clap = { version = "4.6.0", features = ["derive"] }
+
+[profile.dev]
+panic = "abort"

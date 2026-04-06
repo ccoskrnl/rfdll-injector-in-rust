@@ -26,7 +26,7 @@ use windows::Win32::System::Diagnostics::ToolHelp::{
 
 use crate::parse_pe::PeParser;
 
-fn get_process_pid_by_name(target_name_wide: &[u16]) -> Option<u32> {
+pub fn get_process_pid_by_name(target_name_wide: &[u16]) -> Option<u32> {
 
     let target_name_lowercase = String::from_utf16_lossy(target_name_wide).to_lowercase();
 
