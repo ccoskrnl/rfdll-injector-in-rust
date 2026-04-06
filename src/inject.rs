@@ -33,7 +33,7 @@ pub fn get_process_pid_by_name(target_name_wide: &[u16]) -> Option<u32> {
     unsafe {
         let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0).ok()?;
         if snapshot == INVALID_HANDLE_VALUE {
-            eprintln!("Failed to create process snapshot");
+            eprintln!("[ERROR] Failed to create process snapshot.");
             return None;
         }
 
@@ -56,7 +56,7 @@ pub fn get_process_pid_by_name(target_name_wide: &[u16]) -> Option<u32> {
                 }
             }
         } else {
-            eprintln!("Failed to get first process");
+            eprintln!("[ERROR] Failed to get first process.");
         }
 
         let _ = CloseHandle(snapshot);
@@ -73,9 +73,9 @@ pub fn inject_dll_into_process(target_name_wide: &[u16], rf_dll: &PeParser, yolo
     //     .ok_or_else(|| anyhow::anyhow!("Process not found"))?;
 
     let pid = get_process_pid_by_name(target_name_wide)
-        .ok_or_else( || anyhow::anyhow!("Process not found") )?;
+        .ok_or_else( || anyhow::anyhow!("[ERROR] Process not found.") )?;
 
-    println!("Found process with PID: {}", pid);
+    println!("[INFO] Found process with PID: {}.", pid);
 
 
     let mut process_handle: HANDLE = null_mut();
@@ -105,10 +105,10 @@ pub fn inject_dll_into_process(target_name_wide: &[u16], rf_dll: &PeParser, yolo
     };
 
     if status != STATUS_SUCCESS {
-        return Err(anyhow::anyhow!("Failed to open process: 0x{:X}", status));
+        return Err(anyhow::anyhow!("[ERROR] Failed to open process: 0x{:X}.", status));
     }
 
-    println!("Successfully opened process with handle: {:?}", process_handle);
+    println!("[INFO] Successfully opened process with handle: {:?}.", process_handle);
 
     let dll_data = &rf_dll.data;
     let mut base_address: PVOID = null_mut();
@@ -126,7 +126,7 @@ pub fn inject_dll_into_process(target_name_wide: &[u16], rf_dll: &PeParser, yolo
 
     if status != STATUS_SUCCESS || base_address.is_null() {
         unsafe { NtClose(process_handle) };
-        anyhow::bail!("Failed to allocate memory in target process: 0x{:X}", status);
+        anyhow::bail!("[ERROR] Failed to allocate memory in target process: 0x{:X}.", status);
     }
 
     let mut bytes_written: SIZE_T = 0;
@@ -142,10 +142,10 @@ pub fn inject_dll_into_process(target_name_wide: &[u16], rf_dll: &PeParser, yolo
 
     if status != STATUS_SUCCESS || bytes_written != dll_data.len() {
         unsafe { NtClose(process_handle) };
-        anyhow::bail!("Failed to write DLL data to target process: 0x{:X}", status);
+        anyhow::bail!("[ERROR] Failed to write DLL data to target process: 0x{:X}.", status);
     }
 
-    println!("Wrote DLL data to target process at address: {:?}", base_address);
+    println!("[INFO] Wrote DLL data to target process at address: {:?}.", base_address);
 
     let mut thread_handle: HANDLE = null_mut();
     let start_address = (base_address as usize + yolo) as *mut std::ffi::c_void;
@@ -167,9 +167,9 @@ pub fn inject_dll_into_process(target_name_wide: &[u16], rf_dll: &PeParser, yolo
 
     if status != STATUS_SUCCESS {
         unsafe { NtClose(process_handle) };
-        anyhow::bail!("NtCreateThreadEx failed with status: 0x{:08X}", status);
+        anyhow::bail!("[ERROR] NtCreateThreadEx failed with status: 0x{:08X}.", status);
     }
-    println!("Successfully created remote thread with handle: {:?}", thread_handle);
+    println!("[INFO] Successfully created remote thread with handle: {:?}.", thread_handle);
 
     unsafe {
         NtClose(thread_handle);
