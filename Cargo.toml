@@ -9,18 +9,27 @@ sha2 = "0.11.0"
 anyhow = "1.0"
 
 ntapi = "0.4.3"
-windows = { version = "0.62.2", features = [
-    "Win32_Foundation",
-    "Win32_System_Memory",
-    "Win32_System_Diagnostics_ToolHelp",
-    "Win32_System_Diagnostics_Debug",
-    "Win32_System_Kernel",
-    "Win32_System_LibraryLoader",
-] }
-
 pelite = "0.10.0"
-winapi = "0.3.9"
+winapi = { version = "0.3.9", features = [
+    "errhandlingapi", # For GetLastError
+    "winbase",       # For CreateFileMappingA
+    "memoryapi",     # For MapViewOfFile (usually needs explicit enabling too)
+    "libloaderapi",  # For GetModuleHandleA, GetProcAddress
+    "tlhelp32",      # For CreateToolhelp32Snapshot, etc.
+    "minwindef",     # Almost always needed for DWORD, MAX_PATH, etc.
+    "winnt",         # For HANDLE and memory protection constants, etc.
+    "processthreadsapi", # For GetCurrentThread
+] }
 clap = { version = "4.6.0", features = ["derive"] }
+obfuse = "1.0.1"
+export-resolver = "1.0.3"
+# is_elevated = "0.1.2"
 
 [profile.dev]
 panic = "abort"
+
+[profile.release]
+debug = false
+strip = "symbols"
+lto = true          # 链接时优化，进一步减小体积
+# opt-level = "z"     # 优化体积而非速度

