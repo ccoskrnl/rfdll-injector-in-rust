@@ -85,10 +85,6 @@ type NtCreateThreadExFn = unsafe extern "system" fn(
 ) -> i32;
 
 
-static NT_WRITE_VIRTUAL_MEMORY_ADDR: OnceLock<NtWriteVirtualMemoryFn> = OnceLock::new();
-static NT_OPEN_PROCESS_ADDR: OnceLock<NtOpenProcessFn> = OnceLock::new();
-static NT_CREATE_THREAD_EX_ADDR: OnceLock<NtCreateThreadExFn> = OnceLock::new();
-static NT_ALLOCATE_VIRTUAL_MEMORY_ADDR: OnceLock<NtAllocateVirtualMemoryFn> = OnceLock::new();
 
 
 pub fn patch_etw() -> Result<(), anyhow::Error>

