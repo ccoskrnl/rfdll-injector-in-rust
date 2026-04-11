@@ -5,6 +5,7 @@ use obfuse::obfuse;
 use anyhow::{Result, anyhow, Ok};
 
 use crate::nt_api::*;
+use crate::parse_pe::*;
 
 use winapi::ctypes::c_void;
 use winapi::vc::excpt::{EXCEPTION_CONTINUE_EXECUTION, EXCEPTION_CONTINUE_SEARCH};
@@ -233,45 +234,45 @@ unsafe fn set_dr_with_ssn(dr: &DR, address: *const u8, ssn: u32) -> Result<()> {
 }
 
 
-// pub unsafe fn set_hwbp(dr: &DR, func_name: &str) -> Result<()> {
+pub unsafe fn set_hwbp(dr: &DR, func_name: &str) -> Result<()> {
 
 
-//     unsafe {
+    unsafe {
 
-//         let obfused_ntdll_dll = obfuse!("ntdll.dll\0");
-//         let ntdll_str = obfused_ntdll_dll.as_str();
+        let obfused_ntdll_dll = obfuse!("ntdll.dll");
+        let ntdll_str = obfused_ntdll_dll.as_str();
 
-//         let mut exports = ExportList::new();
-//         exports.add(ntdll_str, func_name).expect(&format!("[ERROR] Failed to find address of {}.", func_name));
-//         let func_addr = exports.get_function_address(func_name).expect("[ERROR] Failed to get function address") as *const u8;
+        let ntdll_ptr = unsafe { get_module_handle(ntdll_str) };
+        let parser = PeModuleParser::new(ntdll_ptr);
+        let Some(func_addr) = parser.get_func_addr(func_name) else { anyhow::bail!("[ERROR] Failed to find address of NTTE. ")};
 
-//         println!("[INFO] Setting hardware breakpoint on {func_name} at address: 0x{:X}", func_addr as usize);
+        println!("[INFO] Setting hardware breakpoint on {func_name} at address: 0x{:X}", func_addr as usize);
 
-//         let bytes = std::slice::from_raw_parts(func_addr as *const u8, 32);
+        let bytes = std::slice::from_raw_parts(func_addr as *const u8, 32);
 
-//         let mut ssn = 0;
-//         for i in 0..bytes.len().saturating_sub(4) {
-//             if bytes[i] == 0xB8 {
-//                 ssn = u32::from_le_bytes([bytes[i + 1], bytes[i + 2], bytes[i + 3], bytes[i + 4]]);
-//                 break;
-//             }
-//         }
+        let mut ssn = 0;
+        for i in 0..bytes.len().saturating_sub(4) {
+            if bytes[i] == 0xB8 {
+                ssn = u32::from_le_bytes([bytes[i + 1], bytes[i + 2], bytes[i + 3], bytes[i + 4]]);
+                break;
+            }
+        }
 
-//         if ssn == 0 {
-//             return Err(anyhow!("[ERROR] Failed to find syscall number for {func_name}"));
-//         }
+        if ssn == 0 {
+            return Err(anyhow!("[ERROR] Failed to find syscall number for {func_name}"));
+        }
 
-//         set_dr_with_ssn(&dr, func_addr as *const u8, ssn)?;
+        set_dr_with_ssn(&dr, func_addr as *const u8, ssn)?;
 
-//         println!("[INFO] Hardware breakpoint set successfully on {func_name} (SSN: 0x{:X})", ssn);
+        println!("[INFO] Hardware breakpoint set successfully on {func_name} (SSN: 0x{:X})", ssn);
 
-//     }
-
-
+    }
 
 
-//     Ok(())
-// }
+
+
+    Ok(())
+}
 
 pub unsafe fn unset_hwbp(dr: &DR) -> Result<()> {
 

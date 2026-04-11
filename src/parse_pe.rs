@@ -33,7 +33,7 @@ pub unsafe fn get_module_handle(module_name: &str) -> *mut u8
 
             if !dll_name_raw.is_null() {
 
-                let current_name_slice = unsafe { std::slice::from_raw_parts(dll_name_raw, dll_name_len + 1) };
+                let current_name_slice = unsafe { std::slice::from_raw_parts(dll_name_raw, dll_name_len) };
                 let current_name = String::from_utf16_lossy(current_name_slice);
 
                 if current_name.to_lowercase() == module_name.to_lowercase() {

