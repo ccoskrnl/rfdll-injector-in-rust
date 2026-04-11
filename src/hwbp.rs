@@ -159,9 +159,7 @@ fn set_dr7_bit(current_dr7: u64, start_pos: u32, num_bits: u32, new_value: u64) 
 
     let cleared_dr7 = current_dr7 & !(mask << start_pos);
 
-    let new_dr7 = cleared_dr7 | ((new_value & mask) << start_pos);
-
-    new_dr7
+    cleared_dr7 | ((new_value & mask) << start_pos)
 }
 
 unsafe fn set_drbp_register(ctx: &mut CONTEXT, dr: &DR, address: usize) {
@@ -207,14 +205,14 @@ unsafe fn set_dr_with_ssn(dr: &DR, address: *const u8, ssn: u32) -> Result<()> {
         );
 
         if status != 0 {
-            return Err(anyhow!("[ERROR] ZwGetContextThread failed with status: 0x{:X}", status).into());
+            return Err(anyhow!("[ERROR] ZwGetContextThread failed with status: 0x{:X}", status));
         }
 
-        set_drbp_register(&mut ctx, &dr, address as usize);
+        set_drbp_register(&mut ctx, dr, address as usize);
 
-        dr_to_ssn(&dr, ssn);
+        dr_to_ssn(dr, ssn);
 
-        let dr_index: u32 = dr_to_index(&dr);
+        let dr_index: u32 = dr_to_index(dr);
         ctx.Dr7 = set_dr7_bit(ctx.Dr7, dr_index << 1u8, 1, 1);
 
         let status = zw_set_context_thread(
@@ -225,7 +223,7 @@ unsafe fn set_dr_with_ssn(dr: &DR, address: *const u8, ssn: u32) -> Result<()> {
         );
 
         if status != 0 {
-            return Err(anyhow!("[ERROR] ZwSetContextThread failed with status: 0x{:X}", status).into());
+            return Err(anyhow!("[ERROR] ZwSetContextThread failed with status: 0x{:X}", status));
         }
 
     }
@@ -288,12 +286,12 @@ pub unsafe fn unset_hwbp(dr: &DR) -> Result<()> {
         );
 
         if status != 0 {
-            return Err(anyhow!("[ERROR] ZGCT failed with status: 0x{:X}", status).into());
+            return Err(anyhow!("[ERROR] ZGCT failed with status: 0x{:X}", status));
         }
 
-        set_drbp_register(&mut ctx, &dr, 0);
+        set_drbp_register(&mut ctx, dr, 0);
 
-        let dr_index: u32 = dr_to_index(&dr);
+        let dr_index: u32 = dr_to_index(dr);
         ctx.Dr7 = set_dr7_bit(ctx.Dr7, dr_index << 1u8, 1, 0);
 
         let status = zw_set_context_thread(
@@ -304,12 +302,12 @@ pub unsafe fn unset_hwbp(dr: &DR) -> Result<()> {
         );
 
         if status != 0 {
-            return Err(anyhow!("[ERROR] ZSCT failed with status: 0x{:X}", status).into());
+            return Err(anyhow!("[ERROR] ZSCT failed with status: 0x{:X}", status));
         }
 
     }
 
-    println!("[INFO] hwbp on DR{} unset successfully.", dr_to_index(&dr));
+    println!("[INFO] hwbp on DR{} unset successfully.", dr_to_index(dr));
 
     Ok(())
 
