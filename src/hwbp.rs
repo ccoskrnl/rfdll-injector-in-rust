@@ -1,12 +1,10 @@
 #[allow(unused_imports)]
 
-use std::mem;
-// use std::os::raw::c_void;
 use obfuse::obfuse;
-
 
 use anyhow::{Result, anyhow, Ok};
 
+use crate::nt_api::*;
 
 use winapi::ctypes::c_void;
 use winapi::vc::excpt::{EXCEPTION_CONTINUE_EXECUTION, EXCEPTION_CONTINUE_SEARCH};
@@ -30,16 +28,6 @@ static mut SSN_1: u32 = 0;
 static mut SSN_2: u32 = 0;
 static mut SSN_3: u32 = 0;
 static mut STUB_ADDR: *mut u8 = std::ptr::null_mut();
-
-type ZwGetContextThreadFn = unsafe extern "system" fn(
-    ThreadHandle: HANDLE,
-    ThreadContext: *mut CONTEXT,
-) -> i32;
-
-type ZwSetContextThreadFn = unsafe extern "system" fn(
-    ThreadHandle: HANDLE,
-    ThreadContext: *const CONTEXT,
-) -> i32;
 
 
 unsafe extern "system" fn exception_handler(exception_info: *mut EXCEPTION_POINTERS) -> i32 {
@@ -208,24 +196,14 @@ unsafe fn set_dr_with_ssn(dr: &DR, address: *const u8, ssn: u32) -> Result<()> {
 
     unsafe {
 
-        let obfused_nt_get_context_thread = obfuse!("ZwGetContextThread\0");
-        let obfused_nt_set_context_thread = obfuse!("ZwSetContextThread\0");
-        let obfused_ntdll_dll = obfuse!("ntdll.dll\0");
-        let ntdll_str = obfused_ntdll_dll.as_str();
-        let zw_get_context_thread_str = obfused_nt_get_context_thread.as_str();
-        let zw_set_context_thread_str = obfused_nt_set_context_thread.as_str();
 
-        let ntdll = GetModuleHandleA(ntdll_str.as_ptr() as PCSTR);
-        let zw_get_context_thread_addr = GetProcAddress(ntdll, zw_get_context_thread_str.as_ptr() as PCSTR);
-        let zw_set_context_thread_addr = GetProcAddress(ntdll, zw_set_context_thread_str.as_ptr() as PCSTR);
-        let zw_get_context_thread: ZwGetContextThreadFn = std::mem::transmute(zw_get_context_thread_addr);
-        let zw_set_context_thread: ZwSetContextThreadFn = std::mem::transmute(zw_set_context_thread_addr);
-
-        let mut ctx: CONTEXT = mem::zeroed();
+        let mut ctx: CONTEXT = std::mem::zeroed();
         ctx.ContextFlags = CONTEXT_DEBUG_REGISTERS;
         let status = zw_get_context_thread(
             GetCurrentThread(),
         &mut ctx as *mut CONTEXT,
+        NT_SSN[NtIndex::ZwGetContextThread as usize].ssn,
+        NT_SSN[NtIndex::ZwGetContextThread as usize].syscall_ret
         );
 
         if status != 0 {
@@ -242,6 +220,8 @@ unsafe fn set_dr_with_ssn(dr: &DR, address: *const u8, ssn: u32) -> Result<()> {
         let status = zw_set_context_thread(
             GetCurrentThread(),
             &mut ctx as *mut CONTEXT,
+            NT_SSN[NtIndex::ZwSetContextThread as usize].ssn,
+            NT_SSN[NtIndex::ZwSetContextThread as usize].syscall_ret
         );
 
         if status != 0 {
@@ -255,67 +235,56 @@ unsafe fn set_dr_with_ssn(dr: &DR, address: *const u8, ssn: u32) -> Result<()> {
 }
 
 
-pub unsafe fn set_hwbp(dr: &DR, func_name: &str) -> Result<()> {
+// pub unsafe fn set_hwbp(dr: &DR, func_name: &str) -> Result<()> {
 
 
-    unsafe {
+//     unsafe {
 
-        let obfused_ntdll_dll = obfuse!("ntdll.dll\0");
-        let ntdll_str = obfused_ntdll_dll.as_str();
-        let ntdll = GetModuleHandleA(ntdll_str.as_ptr() as PCSTR);
+//         let obfused_ntdll_dll = obfuse!("ntdll.dll\0");
+//         let ntdll_str = obfused_ntdll_dll.as_str();
 
-        let func_addr = GetProcAddress(ntdll, func_name.as_ptr() as PCSTR);
+//         let mut exports = ExportList::new();
+//         exports.add(ntdll_str, func_name).expect(&format!("[ERROR] Failed to find address of {}.", func_name));
+//         let func_addr = exports.get_function_address(func_name).expect("[ERROR] Failed to get function address") as *const u8;
 
-        println!("[INFO] Setting hardware breakpoint on {func_name} at address: 0x{:X}", func_addr as usize);
+//         println!("[INFO] Setting hardware breakpoint on {func_name} at address: 0x{:X}", func_addr as usize);
 
-        let bytes = std::slice::from_raw_parts(func_addr as *const u8, 32);
+//         let bytes = std::slice::from_raw_parts(func_addr as *const u8, 32);
 
-        let mut ssn = 0;
-        for i in 0..bytes.len().saturating_sub(4) {
-            if bytes[i] == 0xB8 {
-                ssn = u32::from_le_bytes([bytes[i + 1], bytes[i + 2], bytes[i + 3], bytes[i + 4]]);
-                break;
-            }
-        }
+//         let mut ssn = 0;
+//         for i in 0..bytes.len().saturating_sub(4) {
+//             if bytes[i] == 0xB8 {
+//                 ssn = u32::from_le_bytes([bytes[i + 1], bytes[i + 2], bytes[i + 3], bytes[i + 4]]);
+//                 break;
+//             }
+//         }
 
-        if ssn == 0 {
-            return Err(anyhow!("[ERROR] Failed to find syscall number for {func_name}"));
-        }
+//         if ssn == 0 {
+//             return Err(anyhow!("[ERROR] Failed to find syscall number for {func_name}"));
+//         }
 
-        set_dr_with_ssn(&dr, func_addr as *const u8, ssn)?;
+//         set_dr_with_ssn(&dr, func_addr as *const u8, ssn)?;
 
-        println!("[INFO] Hardware breakpoint set successfully on {func_name} (SSN: 0x{:X})", ssn);
+//         println!("[INFO] Hardware breakpoint set successfully on {func_name} (SSN: 0x{:X})", ssn);
 
-    }
-
-
+//     }
 
 
-    Ok(())
-}
+
+
+//     Ok(())
+// }
 
 pub unsafe fn unset_hwbp(dr: &DR) -> Result<()> {
 
     unsafe {
-        let obfused_nt_get_context_thread = obfuse!("ZwGetContextThread\0");
-        let obfused_nt_set_context_thread = obfuse!("ZwSetContextThread\0");
-        let obfused_ntdll_dll = obfuse!("ntdll.dll\0");
-
-        let ntdll_str = obfused_ntdll_dll.as_str();
-        let zw_get_context_thread_str = obfused_nt_get_context_thread.as_str();
-        let zw_set_context_thread_str = obfused_nt_set_context_thread.as_str();
-
-        let ntdll = GetModuleHandleA(ntdll_str.as_ptr() as PCSTR);
-        let zw_get_context_thread_addr = GetProcAddress(ntdll, zw_get_context_thread_str.as_ptr() as PCSTR);
-        let zw_set_context_thread_addr = GetProcAddress(ntdll, zw_set_context_thread_str.as_ptr() as PCSTR);
-        let zw_get_context_thread: ZwGetContextThreadFn = std::mem::transmute(zw_get_context_thread_addr);
-        let zw_set_context_thread: ZwSetContextThreadFn = std::mem::transmute(zw_set_context_thread_addr);
-
-        let mut ctx: CONTEXT = mem::zeroed();
+        let mut ctx: CONTEXT = std::mem::zeroed();
         ctx.ContextFlags = CONTEXT_DEBUG_REGISTERS;
         let status = zw_get_context_thread(
             GetCurrentThread(),
             &mut ctx as *mut CONTEXT,
+            NT_SSN[NtIndex::ZwGetContextThread as usize].ssn,
+            NT_SSN[NtIndex::ZwGetContextThread as usize].syscall_ret
         );
 
         if status != 0 {
@@ -330,6 +299,8 @@ pub unsafe fn unset_hwbp(dr: &DR) -> Result<()> {
         let status = zw_set_context_thread(
             GetCurrentThread(),
             &mut ctx as *mut CONTEXT,
+            NT_SSN[NtIndex::ZwSetContextThread as usize].ssn,
+            NT_SSN[NtIndex::ZwSetContextThread as usize].syscall_ret
         );
 
         if status != 0 {

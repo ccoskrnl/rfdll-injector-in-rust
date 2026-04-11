@@ -22,7 +22,6 @@ winapi = { version = "0.3.9", features = [
 ] }
 clap = { version = "4.6.0", features = ["derive"] }
 obfuse = "1.0.1"
-export-resolver = "1.0.3"
 # is_elevated = "0.1.2"
 
 [profile.dev]

@@ -5,7 +5,6 @@ use ntapi::ntapi_base::CLIENT_ID;
 use winapi::um::winnt::{HANDLE, CONTEXT};
 use winapi::shared::ntdef::OBJECT_ATTRIBUTES;
 use obfuse::obfuse;
-use export_resolver::ExportList;
 use anyhow::anyhow;
 
 
@@ -208,7 +207,9 @@ pub unsafe extern "win64" fn zw_set_context_thread(thread_handle: HANDLE, contex
 macro_rules! set_nt_ssn {
     ($exports:ident, $func_name:expr, $func_index:expr) => {
         unsafe {
-            let func_addr: *mut u8 = $exports.get_function_address($func_name).expect("API not found...") as *mut u8;
+            let func_addr = $exports.get_function_address($func_name)
+                .map_err(|e| anyhow::anyhow!("[ERROR] API {} not found: {}", $func_name, e))? as *mut u8;
+            // let func_addr: *mut u8 = $exports.get_function_address($func_name).expect("API not found...") as *mut u8;
 
             let bytes = std::slice::from_raw_parts(func_addr as *const u8, 32);
 
@@ -259,12 +260,12 @@ pub fn init_nt_api() -> Result<(), anyhow::Error>{
 
 
     let mut exports = ExportList::new();
-    exports.add(ntdll_str, str_nt_open_process)?;
-    exports.add(ntdll_str, str_nt_allocate_virtual_memory)?;
-    exports.add(ntdll_str, str_nt_write_virtual_memory)?;
-    exports.add(ntdll_str, str_nt_create_thread_ex)?;
-    exports.add(ntdll_str, str_zw_get_context_thread)?;
-    exports.add(ntdll_str, str_zw_set_context_thread)?;
+    let _ = exports.add(ntdll_str, str_nt_open_process);
+    let _ = exports.add(ntdll_str, str_nt_allocate_virtual_memory);
+    let _ = exports.add(ntdll_str, str_nt_write_virtual_memory);
+    let _ = exports.add(ntdll_str, str_nt_create_thread_ex);
+    let _ = exports.add(ntdll_str, str_zw_get_context_thread);
+    let _ = exports.add(ntdll_str, str_zw_set_context_thread);
 
     set_nt_ssn!(exports, str_nt_allocate_virtual_memory, NtIndex::ZwAllocateVirtualMemory);
     set_nt_ssn!(exports, str_nt_write_virtual_memory, NtIndex::ZwWriteVirtualMemory);
