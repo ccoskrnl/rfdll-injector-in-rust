@@ -1,87 +1,51 @@
 use pelite::pe64::{Pe, PeFile, exports::Export, PeView};
 use std::ffi::c_void;
 use std::arch::asm;
-
-#[repr(C)]
-pub struct UnicodeString {
-    pub length: u16,
-    pub maximum_length: u16,
-    pub buffer: *mut u16,
-}
-
-#[repr(C)]
-pub struct ListEntry {
-    pub flink: *mut ListEntry,
-    pub blink: *mut ListEntry,
-}
-
-#[repr(C)]
-pub struct PebLdrData {
-    pub reserved: [u8; 8],
-    pub reserved2: [u64; 3],
-    pub in_memory_order_module_list: ListEntry,
-}
-
-#[repr(C)]
-pub struct Peb {
-    // pub reserved: [u8; 16],
-    pub reserved1: [u8; 2],
-    pub being_debugged: u8,
-    pub reserved2: [u8; 1],
-    pub reserved3: [u64; 2],
-    pub ldr: *mut PebLdrData,
-}
-
-#[repr(C)]
-pub struct LdrDataTableEntry {
-    pub in_load_order_links: ListEntry,
-    pub in_memory_order_links: ListEntry,
-    pub in_initialization_order_links: ListEntry,
-    pub dll_base: *mut c_void,
-    pub entry_point: *mut c_void,
-    pub size_of_image: u64,
-    pub full_dll_name: UnicodeString,
-    pub base_dll_name: UnicodeString,
-}
+use ntapi::ntpebteb::{PEB};
+use ntapi::ntpsapi::PEB_LDR_DATA;
+use ntapi::ntldr::LDR_DATA_TABLE_ENTRY;
+use winapi::shared::ntdef::LIST_ENTRY;
+use winapi::shared::ntdef::UNICODE_STRING;
 
 
 pub unsafe fn get_module_handle(module_name: &str) -> *mut u8
 {
-    let peb_ptr: *mut Peb;
+    let peb_ptr: *mut PEB;
     unsafe {
         asm!("mov {}, gs:[0x60]", out(reg) peb_ptr);
     }
 
     if peb_ptr.is_null() { return std::ptr::null_mut(); }
 
-    let ldr : *mut PebLdrData = unsafe { (*peb_ptr).ldr };
-    let list_head : *const ListEntry = unsafe { &(*ldr).in_memory_order_module_list as *const ListEntry };
-    let mut current_node :* mut ListEntry = unsafe { (*list_head).flink };
+    let ldr : *mut PEB_LDR_DATA = unsafe { (*peb_ptr).Ldr };
+    let list_head = unsafe { &(*ldr).InMemoryOrderModuleList };
+    let mut current_node :* mut LIST_ENTRY = unsafe { (*list_head).Flink };
     
 
-    while current_node as *const ListEntry != list_head {
+    while current_node as *const LIST_ENTRY != list_head as *const LIST_ENTRY {
         // let entry = unsafe { (current_node as *const u8).offset(-16) } as *const LdrDataTableEntry; 
-        let entry = unsafe { (current_node as *const u8).offset(-(std::mem::offset_of!(LdrDataTableEntry, in_memory_order_links) as isize)) as *const LdrDataTableEntry };
+        let entry = unsafe { (current_node as *const u8).offset(-(std::mem::offset_of!(LDR_DATA_TABLE_ENTRY, InMemoryOrderLinks) as isize)) as *const LDR_DATA_TABLE_ENTRY };
 
-        if (unsafe { (*entry).base_dll_name.length } != 0) {
+        if (unsafe { (*entry).BaseDllName.Length } != 0) {
 
-            let dll_name_raw = unsafe { (*entry).base_dll_name.buffer };
-            let dll_name_len = unsafe { (*entry).base_dll_name.length as usize / 2 };
+            let dll_name_raw = unsafe { (*entry).BaseDllName.Buffer };
+            let dll_name_len = unsafe { (*entry).BaseDllName.Length as usize / 2 };
 
             if !dll_name_raw.is_null() {
-                let current_name_slice = unsafe { std::slice::from_raw_parts(dll_name_raw, dll_name_len) };
+
+                let current_name_slice = unsafe { std::slice::from_raw_parts(dll_name_raw, dll_name_len + 1) };
                 let current_name = String::from_utf16_lossy(current_name_slice);
 
                 if current_name.to_lowercase() == module_name.to_lowercase() {
                     // 返回基地址
-                    return unsafe { (*entry).dll_base } as *mut u8;
+                    return unsafe { (*entry).DllBase } as *mut u8;
                 }
 
             }
 
         }
 
-        current_node = unsafe { (*current_node).flink }; 
+        current_node = unsafe { (*current_node).Flink }; 
 
     }
 
