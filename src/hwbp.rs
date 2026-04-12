@@ -7,6 +7,8 @@ use anyhow::{Result, anyhow, Ok};
 use crate::nt_api::*;
 use crate::parse_pe::*;
 
+use crate::{debug_eprintln, debug_println};
+
 use winapi::ctypes::c_void;
 use winapi::vc::excpt::{EXCEPTION_CONTINUE_EXECUTION, EXCEPTION_CONTINUE_SEARCH};
 use winapi::um::errhandlingapi::{AddVectoredExceptionHandler, RemoveVectoredExceptionHandler};
@@ -105,7 +107,7 @@ pub unsafe fn hwbp_init() -> Result<()> {
         std::ptr::copy_nonoverlapping(SYSCALL_STUB.as_ptr(), stub_addr as *mut u8, stub_size);
         STUB_ADDR = stub_addr as *mut u8;
 
-        println!("[INFO] Syscall stub allocated at: 0x{:X}", STUB_ADDR as usize);
+        debug_println!("[INFO] Syscall stub allocated at: 0x{:X}", STUB_ADDR as usize);
 
         // Add the vectored exception handler
         let handler = AddVectoredExceptionHandler(1, Some(exception_handler));
@@ -113,7 +115,7 @@ pub unsafe fn hwbp_init() -> Result<()> {
             return Err(anyhow!("[ERROR] Failed to add vectored exception handler."));
         }
 
-        println!("[INFO] Vectored exception handler added successfully.");
+        debug_println!("[INFO] Vectored exception handler added successfully.");
 
     }
 
@@ -127,12 +129,12 @@ pub unsafe fn hwbp_cleanup() -> Result<()> {
         // Remove the vectored exception handler
         RemoveVectoredExceptionHandler(exception_handler as *mut c_void);
 
-        println!("[INFO] Vectored exception handler removed successfully.");
+        debug_println!("[INFO] Vectored exception handler removed successfully.");
 
         // Free the allocated memory for the syscall stub
         if !STUB_ADDR.is_null() {
             let _ = VirtualFree(STUB_ADDR as *mut _, 0, MEM_RELEASE);
-            println!("[INFO] Syscall stub memory freed.");
+            debug_println!("[INFO] Syscall stub memory freed.");
         }
 
         SSN_0 = 0;
@@ -246,7 +248,7 @@ pub unsafe fn set_hwbp(dr: &DR, func_name: &str) -> Result<()> {
         let parser = PeModuleParser::new(ntdll_ptr);
         let Some(func_addr) = parser.get_func_addr(func_name) else { anyhow::bail!("[ERROR] Failed to find address of NTTE. ")};
 
-        println!("[INFO] Setting hardware breakpoint on {func_name} at address: 0x{:X}", func_addr as usize);
+        debug_println!("[INFO] Setting hardware breakpoint on {func_name} at address: 0x{:X}", func_addr as usize);
 
         let bytes = std::slice::from_raw_parts(func_addr as *const u8, 32);
 
@@ -262,9 +264,9 @@ pub unsafe fn set_hwbp(dr: &DR, func_name: &str) -> Result<()> {
             return Err(anyhow!("[ERROR] Failed to find syscall number for {func_name}"));
         }
 
-        set_dr_with_ssn(&dr, func_addr as *const u8, ssn)?;
+        set_dr_with_ssn(dr, func_addr as *const u8, ssn)?;
 
-        println!("[INFO] Hardware breakpoint set successfully on {func_name} (SSN: 0x{:X})", ssn);
+        debug_println!("[INFO] Hardware breakpoint set successfully on {func_name} (SSN: 0x{:X})", ssn);
 
     }
 
@@ -308,7 +310,7 @@ pub unsafe fn unset_hwbp(dr: &DR) -> Result<()> {
 
     }
 
-    println!("[INFO] hwbp on DR{} unset successfully.", dr_to_index(dr));
+    debug_println!("[INFO] hwbp on DR{} unset successfully.", dr_to_index(dr));
 
     Ok(())
 

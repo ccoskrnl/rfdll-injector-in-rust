@@ -8,6 +8,8 @@ use winapi::shared::ntdef::LIST_ENTRY;
 use winapi::shared::ntdef::UNICODE_STRING;
 
 
+use crate::{debug_eprintln, debug_println};
+
 pub unsafe fn get_module_handle(module_name: &str) -> *mut u8
 {
     let peb_ptr: *mut PEB;
@@ -77,7 +79,7 @@ impl<'a> PeFileParser<'a> {
         match query.name(name).ok()? {
             Export::Symbol(&rva) => Some(rva),
             Export::Forward(_) => {
-                eprintln!("Warning: Function '{}' is a forwarded export, skipping RVA retrieval", name);
+                debug_eprintln!("Warning: Function '{}' is a forwarded export, skipping RVA retrieval", name);
                 None
             }, // 转发导出不返回 RVA
 
@@ -110,7 +112,7 @@ impl<'a> PeModuleParser<'a> {
                 unsafe { Some(self.data.add(rva as usize )) }
             }
             Export::Forward(target) => {
-                eprintln!("Warning: Function '{}' is forwarded to {:?}, skipping", name, target);
+                debug_eprintln!("Warning: Function '{}' is forwarded to {:?}, skipping", name, target);
                 None
             }
         }

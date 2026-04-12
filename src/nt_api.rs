@@ -9,6 +9,7 @@ use anyhow::anyhow;
 
 use crate::parse_pe::{PeModuleParser, get_module_handle};
 
+use crate::{debug_eprintln, debug_println};
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
@@ -294,6 +295,9 @@ pub fn init_nt_api() -> Result<(), anyhow::Error>{
     set_nt_ssn!(parser, str_nt_create_thread_ex, NtIndex::ZwCreateThreadEx);
     set_nt_ssn!(parser, str_zw_get_context_thread, NtIndex::ZwGetContextThread);
     set_nt_ssn!(parser, str_zw_set_context_thread, NtIndex::ZwSetContextThread);
+
+    debug_println!("[INFO] NT API initialized successfully.");
+    
 
     Ok(())
 }
