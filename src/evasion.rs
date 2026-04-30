@@ -1,8 +1,13 @@
 use crate::nt_api::*;
 use crate::parse_pe::*;
+use anyhow::Ok;
+use winapi::shared::ntdef::HANDLE;
 use winapi::um::processthreadsapi::GetCurrentProcess;
 use winapi::shared::ntstatus::STATUS_SUCCESS;
+use winapi::um::winnt::{TOKEN_INFORMATION_CLASS, TOKEN_QUERY};
 use std::ffi::c_void;
+use std::ptr::null;
+use std::ptr::null_mut;
 use crate::{debug_eprintln, debug_println};
 use ntapi::ntpebteb::PEB;
 use std::arch::asm;
@@ -69,4 +74,19 @@ pub unsafe fn being_debugged_by_peb() -> bool {
     let being_debugged = unsafe { (*peb_ptr).BeingDebugged };
 
     return being_debugged != 0;
+}
+
+pub unsafe fn etw_session_hijack() -> Result<(), anyhow::Error> {
+
+    let handle = unsafe {
+        GetCurrentProcess()
+    };
+    let h_token: *mut HANDLE = null_mut();
+    let status = unsafe {
+        nt_open_process_token(handle, TOKEN_QUERY, &h_token as *mut HANDLE, NT_SSN[NtIndex::NtOpenProcessToken as usize].ssn, NT_SSN[NtIndex::NtOpenProcessToken as usize].syscall_ret)
+    }
+
+
+
+    Ok(())
 }
